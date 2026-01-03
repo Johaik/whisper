@@ -1,0 +1,154 @@
+version: "3.8"
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: whisper-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: whisper
+      POSTGRES_PASSWORD: whisper
+      POSTGRES_DB: whisper
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whisper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Celery broker
+  redis:
+    image: redis:7-alpine
+    container_name: whisper-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: whisper-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
+      - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
+      - REDIS_URL=redis://redis:6379/0
+      - CALLS_DIR=/data/calls
+      - OUTPUT_DIR=/data/outputs
+      - API_TOKEN=${API_TOKEN:-dev-token-change-me}
+      - MODEL_NAME=${MODEL_NAME:-ivrit-ai/whisper-large-v3-turbo-ct2}
+      - DEVICE=cpu
+      - COMPUTE_TYPE=int8
+      - DIARIZATION_ENABLED=${DIARIZATION_ENABLED:-false}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+    volumes:
+      - ./Calls:/data/calls:ro
+      - ./outputs:/data/outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Celery worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: whisper-worker
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
+      - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
+      - REDIS_URL=redis://redis:6379/0
+      - CALLS_DIR=/data/calls
+      - OUTPUT_DIR=/data/outputs
+      - MODEL_NAME=${MODEL_NAME:-ivrit-ai/whisper-large-v3-turbo-ct2}
+      - DEVICE=cpu
+      - COMPUTE_TYPE=int8
+      - DIARIZATION_ENABLED=${DIARIZATION_ENABLED:-false}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+    volumes:
+      - ./Calls:/data/calls:ro
+      - ./outputs:/data/outputs
+      - model_cache:/home/whisper/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Folder watcher - auto-discovers new files
+  watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
+    container_name: whisper-watcher
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
+      - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
+      - REDIS_URL=redis://redis:6379/0
+      - CALLS_DIR=/data/calls
+      - WATCHER_POLL_INTERVAL=${WATCHER_POLL_INTERVAL:-30}
+      - WATCHER_STABLE_SECONDS=${WATCHER_STABLE_SECONDS:-10}
+    volumes:
+      - ./Calls:/data/calls:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Database migration runner (one-shot)
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: whisper-migrate
+    environment:
+      - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Adminer for database inspection (optional)
+  adminer:
+    image: adminer:latest
+    container_name: whisper-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+  redis_data:
+  model_cache:
+
