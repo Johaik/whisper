@@ -46,6 +46,9 @@ class RecordingListItem(RecordingBase):
     id: UUID
     status: RecordingStatus
     duration_sec: float | None
+    phone_number: str | None = None
+    caller_name: str | None = None
+    call_datetime: datetime | None = None
     created_at: datetime
     processed_at: datetime | None
 
@@ -113,6 +116,9 @@ class RecordingDetail(RecordingBase):
     container: str | None
     bit_rate: int | None
     metadata_json: dict[str, Any] | None
+    phone_number: str | None = None
+    caller_name: str | None = None
+    call_datetime: datetime | None = None
     created_at: datetime
     updated_at: datetime
     processed_at: datetime | None

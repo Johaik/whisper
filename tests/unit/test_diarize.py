@@ -56,15 +56,21 @@ class TestDiarizeAudio:
         assert result.segments == []
         assert result.speaker_count == 0
 
+    @patch("app.processors.diarize._load_audio_as_waveform")
     @patch("app.processors.diarize.get_or_load_pipeline")
     @patch("app.processors.diarize.get_settings")
-    def test_processes_audio_when_enabled(self, mock_settings, mock_get_pipeline):
+    def test_processes_audio_when_enabled(self, mock_settings, mock_get_pipeline, mock_load_audio):
         """Test that audio is processed when diarization is enabled."""
+        import torch
         mock_settings.return_value.diarization_enabled = True
+        
+        # Mock audio loading
+        mock_load_audio.return_value = (torch.zeros(1, 16000), 16000)
 
         # Mock pyannote pipeline
         mock_pipeline = MagicMock()
-        mock_diarization = MagicMock()
+        mock_diarization_output = MagicMock()
+        mock_annotation = MagicMock()
 
         # Create mock turns
         mock_turn1 = MagicMock()
@@ -75,12 +81,15 @@ class TestDiarizeAudio:
         mock_turn2.start = 5.0
         mock_turn2.end = 10.0
 
-        mock_diarization.itertracks.return_value = [
+        mock_annotation.itertracks.return_value = [
             (mock_turn1, None, "SPEAKER_0"),
             (mock_turn2, None, "SPEAKER_1"),
         ]
+        
+        # Handle pyannote 4.0 output format
+        mock_diarization_output.speaker_diarization = mock_annotation
 
-        mock_pipeline.return_value = mock_diarization
+        mock_pipeline.return_value = mock_diarization_output
         mock_get_pipeline.return_value = mock_pipeline
 
         result = diarize_audio("/path/to/audio.wav")

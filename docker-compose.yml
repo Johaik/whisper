@@ -84,11 +84,17 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CALLS_DIR=/data/calls
       - OUTPUT_DIR=/data/outputs
+      # Best accuracy settings for Hebrew transcription
       - MODEL_NAME=${MODEL_NAME:-ivrit-ai/whisper-large-v3-turbo-ct2}
       - DEVICE=cpu
-      - COMPUTE_TYPE=int8
+      - COMPUTE_TYPE=float32
+      - BEAM_SIZE=10
       - DIARIZATION_ENABLED=${DIARIZATION_ENABLED:-false}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      # Google Contacts for caller name lookup
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN:-}
     volumes:
       - ./Calls:/data/calls:ro
       - ./outputs:/data/outputs

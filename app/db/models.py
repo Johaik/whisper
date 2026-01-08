@@ -81,6 +81,11 @@ class Recording(Base):
     # Additional metadata as JSON
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # Caller metadata (parsed from filename)
+    phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    caller_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    call_datetime: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow

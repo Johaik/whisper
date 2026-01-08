@@ -1,6 +1,9 @@
 """Speaker diarization using pyannote.audio."""
 
 import logging
+import os
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,12 +50,16 @@ def get_or_load_pipeline() -> Any:
             )
 
         try:
+            import os
             from pyannote.audio import Pipeline
+
+            # Set HuggingFace token in environment for pyannote
+            if settings.huggingface_token:
+                os.environ["HF_TOKEN"] = settings.huggingface_token
 
             logger.info("Loading pyannote speaker diarization pipeline...")
             pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
-                use_auth_token=settings.huggingface_token,
             )
             _pipeline_cache["pipeline"] = pipeline
             logger.info("Diarization pipeline loaded successfully")
@@ -61,6 +68,50 @@ def get_or_load_pipeline() -> Any:
             raise
 
     return _pipeline_cache["pipeline"]
+
+
+def _load_audio_as_waveform(audio_path: str) -> tuple[Any, int]:
+    """Load audio file as waveform tensor for pyannote.
+    
+    Handles m4a and other formats by converting to WAV via ffmpeg.
+    
+    Args:
+        audio_path: Path to the audio file
+        
+    Returns:
+        Tuple of (waveform tensor, sample_rate)
+    """
+    import torchaudio
+    
+    # Try loading directly first
+    try:
+        waveform, sample_rate = torchaudio.load(audio_path)
+        # Resample to 16kHz mono for pyannote
+        if sample_rate != 16000:
+            resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+            waveform = resampler(waveform)
+            sample_rate = 16000
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+        return waveform, sample_rate
+    except Exception as e:
+        logger.debug(f"Direct load failed, trying ffmpeg conversion: {e}")
+    
+    # Convert via ffmpeg for formats like m4a
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        temp_wav = f.name
+    
+    try:
+        subprocess.run(
+            ['ffmpeg', '-y', '-i', audio_path, '-ar', '16000', '-ac', '1', '-f', 'wav', temp_wav],
+            capture_output=True,
+            check=True,
+        )
+        waveform, sample_rate = torchaudio.load(temp_wav)
+        return waveform, sample_rate
+    finally:
+        if os.path.exists(temp_wav):
+            os.unlink(temp_wav)
 
 
 def diarize_audio(audio_path: str) -> DiarizationResult:
@@ -80,13 +131,26 @@ def diarize_audio(audio_path: str) -> DiarizationResult:
 
     logger.info(f"Running diarization on: {audio_path}")
 
+    # Load audio as waveform (handles m4a conversion)
+    waveform, sample_rate = _load_audio_as_waveform(audio_path)
+    logger.info(f"Loaded audio: {waveform.shape[1]/sample_rate:.1f}s @ {sample_rate}Hz")
+
     pipeline = get_or_load_pipeline()
-    diarization = pipeline(audio_path)
+    
+    # Pass pre-loaded audio to avoid pyannote's audio loading issues
+    diarization_output = pipeline({'waveform': waveform, 'sample_rate': sample_rate})
+
+    # Handle pyannote 4.0 output format (DiarizeOutput object)
+    if hasattr(diarization_output, 'speaker_diarization'):
+        annotation = diarization_output.speaker_diarization
+    else:
+        # Fallback for older pyannote versions
+        annotation = diarization_output
 
     segments: list[DiarizationSegment] = []
     speakers_set: set[str] = set()
 
-    for turn, _, speaker in diarization.itertracks(yield_label=True):
+    for turn, _, speaker in annotation.itertracks(yield_label=True):
         segments.append(
             DiarizationSegment(
                 start=turn.start,

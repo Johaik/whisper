@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     watcher_poll_interval: int = 30  # seconds between folder scans
     watcher_stable_seconds: int = 10  # file must be unmodified for this long
 
+    # Google Contacts API settings (optional, for caller name lookup)
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_refresh_token: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

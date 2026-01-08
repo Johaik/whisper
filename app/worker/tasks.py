@@ -12,8 +12,10 @@ from app.db.models import Enrichment, Recording, RecordingStatus, Transcript
 from app.db.session import get_sync_session
 from app.processors.analytics import compute_analytics
 from app.processors.diarize import assign_speakers_to_transcript, diarize_audio
+from app.processors.filename_parser import parse_recording_filename
 from app.processors.metadata import extract_metadata
 from app.processors.transcribe import segments_to_json, transcribe_audio
+from app.services.google_contacts import lookup_caller_name
 from app.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,45 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 
         file_path = recording.file_path
         logger.info(f"Processing file: {file_path}")
+
+        # Step 0: Parse caller info from filename
+        logger.info("Step 0: Parsing caller metadata from filename...")
+        try:
+            caller_metadata = parse_recording_filename(recording.file_name)
+
+            # Handle phone number
+            if caller_metadata.phone_number:
+                recording.phone_number = caller_metadata.phone_number
+                logger.info(f"Parsed phone number: {caller_metadata.phone_number}")
+
+                # Look up caller name from Google Contacts
+                caller_name = lookup_caller_name(caller_metadata.phone_number)
+                if caller_name:
+                    recording.caller_name = caller_name
+                    logger.info(f"Found caller name from contacts: {caller_name}")
+
+            # Handle caller name from filename (e.g., "Call recording Asaf David_...")
+            if caller_metadata.caller_name and not recording.caller_name:
+                recording.caller_name = caller_metadata.caller_name
+                logger.info(f"Parsed caller name from filename: {caller_metadata.caller_name}")
+
+            if caller_metadata.call_datetime:
+                recording.call_datetime = caller_metadata.call_datetime
+                logger.info(f"Parsed call datetime: {caller_metadata.call_datetime}")
+
+            # Store in metadata_json as well
+            if recording.metadata_json is None:
+                recording.metadata_json = {}
+            recording.metadata_json['caller_info'] = {
+                'phone_number': caller_metadata.phone_number,
+                'raw_phone': caller_metadata.raw_phone,
+                'caller_name': recording.caller_name,
+                'caller_name_source': 'filename' if caller_metadata.caller_name else ('contacts' if recording.caller_name else None),
+                'call_datetime': caller_metadata.call_datetime.isoformat() if caller_metadata.call_datetime else None,
+            }
+            session.commit()
+        except Exception as e:
+            logger.warning(f"Filename parsing failed (continuing): {e}")
 
         # Step 1: Extract metadata
         logger.info("Step 1: Extracting metadata...")

@@ -5,9 +5,15 @@ Optimized for Hebrew with ivrit-ai's fine-tuned models
 
 For best Hebrew accuracy, use the ivrit-ai models which are specifically
 trained on 295+ hours of Hebrew speech data.
+
+Features:
+- Hebrew-optimized transcription with ivrit-ai models
+- Speaker diarization (who said what) with pyannote
+- Timestamps and file output
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -23,6 +29,13 @@ try:
     WHISPER_AVAILABLE = True
 except ImportError:
     WHISPER_AVAILABLE = False
+
+try:
+    from pyannote.audio import Pipeline as DiarizationPipeline
+    import torch
+    PYANNOTE_AVAILABLE = True
+except ImportError:
+    PYANNOTE_AVAILABLE = False
 
 
 def transcribe_with_faster_whisper(
@@ -138,6 +151,136 @@ def transcribe_with_whisper(
     return result
 
 
+def run_diarization(audio_path: str, hf_token: str = None, num_speakers: int = None) -> list:
+    """
+    Run speaker diarization to identify who spoke when.
+    
+    Args:
+        audio_path: Path to the audio file
+        hf_token: HuggingFace token (required for pyannote models)
+        num_speakers: Optional number of speakers (auto-detect if None)
+    
+    Returns:
+        List of (start, end, speaker) tuples
+    """
+    if not PYANNOTE_AVAILABLE:
+        raise ImportError("pyannote.audio not installed. Run: pip install pyannote.audio")
+    
+    # Get token from argument or environment
+    token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+    
+    if not token:
+        raise ValueError(
+            "HuggingFace token required for speaker diarization.\n"
+            "Get a token at: https://huggingface.co/settings/tokens\n"
+            "Then either:\n"
+            "  1. Set HF_TOKEN environment variable: export HF_TOKEN=your_token\n"
+            "  2. Pass --hf-token your_token\n\n"
+            "Note: You must also accept the model terms at:\n"
+            "  https://huggingface.co/pyannote/speaker-diarization-3.1"
+        )
+    
+    print("🔄 Loading speaker diarization model...")
+    
+    # Load pyannote diarization pipeline
+    pipeline = DiarizationPipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1",
+        use_auth_token=token
+    )
+    
+    # Use GPU if available
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pipeline.to(device)
+    
+    print(f"👥 Identifying speakers in: {audio_path}")
+    
+    # Run diarization
+    if num_speakers:
+        diarization = pipeline(audio_path, num_speakers=num_speakers)
+    else:
+        diarization = pipeline(audio_path)
+    
+    # Extract speaker segments
+    speaker_segments = []
+    for turn, _, speaker in diarization.itertracks(yield_label=True):
+        speaker_segments.append({
+            "start": turn.start,
+            "end": turn.end,
+            "speaker": speaker
+        })
+    
+    return speaker_segments
+
+
+def transcribe_with_diarization(
+    audio_path: str,
+    model_name: str = "ivrit-ai/whisper-large-v3-turbo-ct2",
+    beam_size: int = 5,
+    hf_token: str = None,
+    num_speakers: int = None,
+) -> dict:
+    """
+    Transcribe with speaker diarization (who said what).
+    
+    Combines faster-whisper transcription with pyannote speaker diarization.
+    """
+    if not FASTER_WHISPER_AVAILABLE:
+        raise ImportError("faster-whisper not installed. Run: pip install faster-whisper")
+    
+    # Step 1: Run diarization
+    speaker_segments = run_diarization(audio_path, hf_token, num_speakers)
+    
+    # Count unique speakers
+    unique_speakers = set(seg["speaker"] for seg in speaker_segments)
+    print(f"👥 Found {len(unique_speakers)} speakers")
+    
+    # Step 2: Transcribe with word timestamps
+    print(f"🔄 Loading faster-whisper model: {model_name}...")
+    model = faster_whisper.WhisperModel(
+        model_name,
+        device="cpu",
+        compute_type="int8",
+    )
+    
+    print(f"🎙️ Transcribing: {audio_path}")
+    segments, info = model.transcribe(
+        audio_path,
+        language="he",
+        beam_size=beam_size,
+        word_timestamps=True,
+    )
+    segments = list(segments)
+    
+    # Step 3: Assign speakers to transcription segments
+    print("🔄 Matching speakers to text...")
+    results = []
+    
+    for segment in segments:
+        segment_mid = (segment.start + segment.end) / 2
+        
+        # Find speaker at midpoint
+        speaker = "UNKNOWN"
+        for diar_seg in speaker_segments:
+            if diar_seg["start"] <= segment_mid <= diar_seg["end"]:
+                speaker = diar_seg["speaker"]
+                break
+        
+        results.append({
+            "speaker": speaker,
+            "start": segment.start,
+            "end": segment.end,
+            "text": segment.text.strip(),
+        })
+    
+    return {
+        "segments": results,
+        "text": " ".join(seg["text"] for seg in results),
+        "language": info.language,
+        "language_probability": info.language_probability,
+        "num_speakers": len(unique_speakers),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Transcribe Hebrew audio with optimized settings",
@@ -147,18 +290,22 @@ Examples:
   # Best accuracy with ivrit-ai Hebrew model (requires faster-whisper)
   python transcribe_hebrew.py audio.mp3 --ivrit
   
+  # Speaker diarization (who said what) - requires HF_TOKEN
+  export HF_TOKEN=your_huggingface_token
+  python transcribe_hebrew.py call.m4a --diarize
+  
+  # Diarization with known number of speakers
+  python transcribe_hebrew.py call.m4a --diarize --num-speakers 2
+  
   # Using original Whisper with large model
   python transcribe_hebrew.py audio.mp3 --model large
-  
-  # High accuracy mode with beam search
-  python transcribe_hebrew.py audio.mp3 --model large --beam-size 10
   
   # Save to file
   python transcribe_hebrew.py audio.mp3 --ivrit --output result.txt
 
 Recommended for Hebrew:
   --ivrit              Use ivrit-ai's Hebrew-trained model (BEST accuracy)
-  --model large        Use OpenAI's large model
+  --diarize            Separate speakers (caller vs callee)
   --beam-size 5-10     Higher beam size = more accurate
         """
     )
@@ -213,6 +360,23 @@ Recommended for Hebrew:
         action="store_true",
         help="Include timestamps in output"
     )
+    parser.add_argument(
+        "--diarize",
+        action="store_true",
+        help="Enable speaker diarization (identify who said what)"
+    )
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        default=None,
+        help="HuggingFace token for pyannote (or set HF_TOKEN env var)"
+    )
+    parser.add_argument(
+        "--num-speakers",
+        type=int,
+        default=None,
+        help="Number of speakers (auto-detect if not specified)"
+    )
     
     args = parser.parse_args()
     
@@ -223,7 +387,31 @@ Recommended for Hebrew:
         sys.exit(1)
     
     # Choose transcription method
-    if args.ivrit:
+    if args.diarize:
+        # Speaker diarization mode
+        if not PYANNOTE_AVAILABLE:
+            print("❌ Error: pyannote.audio not installed.")
+            print("   Install with: pip install pyannote.audio")
+            sys.exit(1)
+        
+        if not FASTER_WHISPER_AVAILABLE:
+            print("❌ Error: faster-whisper not installed.")
+            print("   Install with: pip install faster-whisper")
+            sys.exit(1)
+        
+        try:
+            result = transcribe_with_diarization(
+                str(audio_path),
+                model_name="ivrit-ai/whisper-large-v3-turbo-ct2",
+                beam_size=args.beam_size,
+                hf_token=args.hf_token,
+                num_speakers=args.num_speakers,
+            )
+        except ValueError as e:
+            print(f"❌ Error: {e}")
+            sys.exit(1)
+    
+    elif args.ivrit:
         if not FASTER_WHISPER_AVAILABLE:
             print("❌ Error: faster-whisper not installed.")
             print("   Install with: pip install faster-whisper")
@@ -263,7 +451,20 @@ Recommended for Hebrew:
     # Format output
     text = result["text"].strip()
     
-    if args.timestamps and result.get("segments"):
+    if args.diarize and result.get("segments"):
+        # Diarization output with speaker labels
+        output_lines = []
+        for seg in result["segments"]:
+            speaker = seg.get("speaker", "UNKNOWN")
+            start = seg.get("start", 0)
+            end = seg.get("end", 0)
+            seg_text = seg.get("text", "").strip()
+            if args.timestamps:
+                output_lines.append(f"[{speaker}] [{start:.2f} -> {end:.2f}] {seg_text}")
+            else:
+                output_lines.append(f"[{speaker}] {seg_text}")
+        output_text = "\n".join(output_lines)
+    elif args.timestamps and result.get("segments"):
         output_lines = []
         for seg in result["segments"]:
             start = seg.get("start", 0)
@@ -289,6 +490,8 @@ Recommended for Hebrew:
     # Print stats
     if result.get("segments"):
         print(f"\n📊 Detected {len(result['segments'])} segments")
+    if result.get("num_speakers"):
+        print(f"👥 Speakers identified: {result['num_speakers']}")
     if result.get("language_probability"):
         print(f"🔤 Language confidence: {result['language_probability']:.1%}")
 

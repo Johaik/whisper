@@ -32,11 +32,14 @@ redis>=5.0.0
 # Audio Processing
 # ============================================
 numpy
-torch
+torch>=2.0.0,<2.6.0
+torchaudio>=2.0.0,<2.6.0
 tqdm
 
 # Diarization (optional - requires HuggingFace token)
-pyannote.audio>=3.1.0
+pyannote.audio>=3.1.0,<3.4.0
+huggingface_hub>=0.20.0,<0.25.0  # Compatible with pyannote
+matplotlib  # Required by pyannote
 
 # ============================================
 # Testing
@@ -46,6 +49,13 @@ pytest-asyncio>=0.23.0
 pytest-cov>=4.1.0
 httpx>=0.26.0
 testcontainers>=3.7.0
+
+# ============================================
+# Google API Integration (optional - for caller name lookup)
+# ============================================
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
 
 # ============================================
 # Development Tools

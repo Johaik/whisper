@@ -45,6 +45,10 @@ htmlcov/
 .env.local
 .env.*.local
 
+# Google OAuth credentials (sensitive)
+credentials.json
+client_secret*.json
+
 # Logs
 *.log
 logs/
