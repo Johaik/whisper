@@ -166,3 +166,13 @@ class HealthResponse(BaseModel):
     redis: str
     workers: int | None = None
 
+
+class QueueStatusResponse(BaseModel):
+    """Queue status for batch sync decisions."""
+
+    queued: int = Field(description="Recordings waiting to be processed")
+    processing: int = Field(description="Recordings currently being processed")
+    active_tasks: int = Field(description="Active Celery tasks")
+    can_accept_more: bool = Field(description="True if queue can accept more files")
+    threshold: int = Field(description="Queue threshold before accepting more")
+

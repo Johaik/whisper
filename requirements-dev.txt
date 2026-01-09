@@ -1,0 +1,17 @@
+# Development and testing dependencies
+# ============================================
+
+# Include all production dependencies
+-r requirements-base.txt
+-r requirements-ml.txt
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+httpx>=0.26.0
+testcontainers>=3.7.0
+
+# Development Tools
+ruff>=0.1.0
+mypy>=1.8.0

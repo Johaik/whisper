@@ -377,6 +377,23 @@ python transcribe_hebrew.py audio.mp3 --ivrit --beam-size 10
 
 ---
 
+---
+
+## 📚 Documentation
+
+Detailed documentation is available in the [`docs/`](docs/) folder:
+
+| Document | Description |
+|----------|-------------|
+| [Deployment Guide](docs/deployment.md) | Deploy from Mac to Windows |
+| [Makefile Reference](docs/makefile.md) | All available make commands |
+| [Architecture](docs/architecture.md) | System components and data flow |
+| [Configuration](docs/configuration.md) | Environment variables reference |
+| [Security](docs/security.md) | Security considerations |
+| [Google Drive Integration](docs/google-drive.md) | Process files from Google Drive |
+
+---
+
 ## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.

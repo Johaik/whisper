@@ -72,7 +72,20 @@ outputs/*
 *.db
 *.sqlite3
 
+# Ansible
+ansible/*.retry
+ansible/vault_password.txt
+ansible/group_vars/vault.yml
+ansible/group_vars/*_vault.yml
+ansible/.ghcr_token
+ansible/.huggingface_token
+ansible/.google_client_id
+ansible/.google_client_secret
+ansible/.google_refresh_token
+
+# Docker override (local dev specific)
+# docker-compose.override.yml  # Uncomment if you want to ignore this
+
 # Misc
 .DS_Store
 Thumbs.db
-

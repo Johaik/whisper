@@ -1,0 +1,44 @@
+---
+# GitHub Container Registry settings
+ghcr_registry: "ghcr.io"
+ghcr_username: "johaik"  # Your GitHub username
+
+# GitHub token for registry access
+# Generate at: https://github.com/settings/tokens with read:packages, write:packages
+# Token is stored in ansible/.ghcr_token (gitignored)
+ghcr_token: "{{ lookup('file', playbook_dir + '/.ghcr_token') | trim }}"
+
+# Image names (full path)
+images:
+  api: "{{ ghcr_registry }}/{{ ghcr_username }}/whisper-api"
+  worker: "{{ ghcr_registry }}/{{ ghcr_username }}/whisper-worker"
+  watcher: "{{ ghcr_registry }}/{{ ghcr_username }}/whisper-watcher"
+
+# Image tag
+image_tag: "latest"
+
+# Windows deployment path
+win_app_dir: "C:\\app"
+
+# Project root (relative to ansible directory)
+project_root: ".."
+
+# ===========================================
+# Feature Configuration
+# ===========================================
+
+# Diarization (speaker detection)
+# Requires HuggingFace token with access to pyannote models
+# 1. Get token at: https://huggingface.co/settings/tokens
+# 2. Accept model terms at: https://huggingface.co/pyannote/speaker-diarization-3.1
+# 3. Save token to: ansible/.huggingface_token
+diarization_enabled: "{{ 'true' if lookup('file', playbook_dir + '/.huggingface_token', errors='ignore') | default('') | trim | length > 0 else 'false' }}"
+huggingface_token: "{{ lookup('file', playbook_dir + '/.huggingface_token', errors='ignore') | default('') | trim }}"
+
+# Google Contacts API (for caller name lookup)
+# 1. Create OAuth credentials at: https://console.cloud.google.com/apis/credentials
+# 2. Run: python app/services/oauth_setup.py
+# 3. Save values to: ansible/.google_client_id, ansible/.google_client_secret, ansible/.google_refresh_token
+google_client_id: "{{ lookup('file', playbook_dir + '/.google_client_id', errors='ignore') | default('') | trim }}"
+google_client_secret: "{{ lookup('file', playbook_dir + '/.google_client_secret', errors='ignore') | default('') | trim }}"
+google_refresh_token: "{{ lookup('file', playbook_dir + '/.google_refresh_token', errors='ignore') | default('') | trim }}"

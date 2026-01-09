@@ -1,0 +1,116 @@
+---
+- name: Check Windows deployment status
+  hosts: windows
+  gather_facts: no
+
+  vars:
+    win_app_dir: "C:\\app"
+
+  tasks:
+    - name: Gather comprehensive status
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "╔══════════════════════════════════════════════════════════════╗"
+          Write-Output "║              WHISPER DEPLOYMENT STATUS                       ║"
+          Write-Output "╚══════════════════════════════════════════════════════════════╝"
+          Write-Output ""
+          
+          # Container Status
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ CONTAINERS                                                  │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          docker ps --format "table {% raw %}{{.Names}}\t{{.Status}}{% endraw %}"
+          Write-Output ""
+          
+          # Queue Status
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ PROCESSING QUEUE                                            │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          try {
+            $q = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/queue/status" -TimeoutSec 5
+            Write-Output "  Queued:      $($q.queued) files waiting"
+            Write-Output "  Processing:  $($q.processing) files in progress"
+            Write-Output "  Workers:     $($q.active_tasks) active"
+            Write-Output "  Accept more: $($q.can_accept_more) (threshold: $($q.threshold))"
+          } catch {
+            Write-Output "  API not available"
+          }
+          Write-Output ""
+          
+          # Recordings Summary (query database directly via docker)
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ DATABASE RECORDINGS                                         │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          try {
+            $query = "SELECT status, COUNT(*) as count FROM recordings GROUP BY status ORDER BY status;"
+            $result = docker exec whisper-postgres psql -U whisper -d whisper -t -c "$query" 2>$null
+            if ($result) {
+              $result.Trim().Split("`n") | ForEach-Object {
+                $parts = $_.Trim().Split("|")
+                if ($parts.Count -eq 2) {
+                  $status = $parts[0].Trim().PadRight(12)
+                  $count = $parts[1].Trim()
+                  Write-Output "  $status : $count"
+                }
+              }
+            }
+            $total = docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT COUNT(*) FROM recordings;" 2>$null
+            Write-Output "  ─────────────────"
+            Write-Output "  Total        : $($total.Trim())"
+          } catch {
+            Write-Output "  Database not available"
+          }
+          Write-Output ""
+          
+          # Google Drive Sync Status
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ GOOGLE DRIVE SYNC                                           │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          $copiedCount = 0
+          if (Test-Path "{{ win_app_dir }}\copied-files.txt") {
+            $copiedCount = (Get-Content "{{ win_app_dir }}\copied-files.txt" | Measure-Object).Count
+          }
+          $callsCount = (Get-ChildItem "{{ win_app_dir }}\Calls" -File 2>$null | Measure-Object).Count
+          
+          # Check Google Drive
+          $gdriveCount = 0
+          if (Test-Path "H:\My Drive\calls") {
+            $gdriveCount = (Get-ChildItem "H:\My Drive\calls" -File -Include "*.m4a","*.mp3","*.wav" -Recurse | Measure-Object).Count
+          }
+          
+          Write-Output "  Google Drive files:  $gdriveCount"
+          Write-Output "  Copied to local:     $copiedCount"
+          Write-Output "  In Calls folder:     $callsCount"
+          Write-Output "  Remaining to copy:   $($gdriveCount - $copiedCount)"
+          Write-Output ""
+          
+          # Scheduled Task Status
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ SCHEDULED TASK                                              │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          $task = Get-ScheduledTask -TaskName "WhisperBatchSync" -ErrorAction SilentlyContinue
+          if ($task) {
+            $info = Get-ScheduledTaskInfo -TaskName "WhisperBatchSync"
+            Write-Output "  Status:    $($task.State)"
+            Write-Output "  Last run:  $($info.LastRunTime)"
+            Write-Output "  Next run:  $($info.NextRunTime)"
+          } else {
+            Write-Output "  Task not configured"
+          }
+          Write-Output ""
+          
+          # Recent Worker Activity
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ RECENT WORKER ACTIVITY                                      │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          docker logs whisper-worker --tail=5 2>&1 | ForEach-Object {
+            if ($_ -match "succeeded|Processing|complete") {
+              Write-Output "  $_"
+            }
+          }
+          Write-Output ""
+      register: status_output
+
+    - name: Display status
+      ansible.builtin.debug:
+        msg: "{{ status_output.output }}"

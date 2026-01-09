@@ -1,0 +1,323 @@
+---
+- name: Local development and build operations
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    # ===========================================
+    # Tag: dev - Start local development environment
+    # ===========================================
+    - name: Start local dev environment
+      ansible.builtin.command: docker compose up -d
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      tags: [dev, never]
+
+    - name: Show local dev status
+      ansible.builtin.command: docker compose ps
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: dev_status
+      tags: [dev, never]
+
+    - name: Display status
+      ansible.builtin.debug:
+        msg: "{{ dev_status.stdout_lines }}"
+      tags: [dev, never]
+
+    # ===========================================
+    # Tag: stop - Stop local development environment
+    # ===========================================
+    - name: Stop local dev environment
+      ansible.builtin.command: docker compose down
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      tags: [stop, never]
+
+    # ===========================================
+    # Tag: build - Build images for amd64 (local only)
+    # ===========================================
+    - name: Setup buildx builder
+      ansible.builtin.shell: |
+        docker buildx use multiarch 2>/dev/null || docker buildx create --name multiarch --use
+      tags: [build, push, never]
+
+    - name: Inspect buildx builder
+      ansible.builtin.command: docker buildx inspect --bootstrap
+      tags: [build, push, never]
+
+    - name: "Building API image (1/3)..."
+      ansible.builtin.debug:
+        msg: "Starting build: {{ images.api }}:{{ image_tag }}"
+      tags: [build, never]
+
+    - name: Build API image for amd64
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.api }}:{{ image_tag }} \
+          -f Dockerfile.api --load . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: api_build
+      tags: [build, never]
+
+    - name: API build output
+      ansible.builtin.debug:
+        msg: "{{ api_build.stdout_lines[-20:] }}"
+      when: api_build.stdout_lines | length > 0
+      tags: [build, never]
+
+    - name: "Building Worker image (2/3) - this takes a while..."
+      ansible.builtin.debug:
+        msg: "Starting build: {{ images.worker }}:{{ image_tag }} (ML dependencies)"
+      tags: [build, never]
+
+    - name: Build Worker image for amd64
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.worker }}:{{ image_tag }} \
+          -f Dockerfile.worker --load . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: worker_build
+      tags: [build, never]
+
+    - name: Worker build output
+      ansible.builtin.debug:
+        msg: "{{ worker_build.stdout_lines[-20:] }}"
+      when: worker_build.stdout_lines | length > 0
+      tags: [build, never]
+
+    - name: "Building Watcher image (3/3)..."
+      ansible.builtin.debug:
+        msg: "Starting build: {{ images.watcher }}:{{ image_tag }}"
+      tags: [build, never]
+
+    - name: Build Watcher image for amd64
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.watcher }}:{{ image_tag }} \
+          -f Dockerfile.watcher --load . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: watcher_build
+      tags: [build, never]
+
+    - name: Watcher build output
+      ansible.builtin.debug:
+        msg: "{{ watcher_build.stdout_lines[-20:] }}"
+      when: watcher_build.stdout_lines | length > 0
+      tags: [build, never]
+
+    - name: List built images
+      ansible.builtin.shell: docker images | grep -E "ghcr.io/{{ ghcr_username }}/whisper|REPOSITORY"
+      register: built_images
+      tags: [build, never]
+
+    - name: Display built images
+      ansible.builtin.debug:
+        msg: "{{ built_images.stdout_lines }}"
+      tags: [build, never]
+
+    # ===========================================
+    # Tag: push - Push to GHCR (build only if needed)
+    # Tag: push-build - Force build and push
+    # ===========================================
+    - name: Login to GitHub Container Registry
+      ansible.builtin.command: >
+        docker login ghcr.io -u {{ ghcr_username }} --password-stdin
+      args:
+        stdin: "{{ ghcr_token }}"
+      no_log: true
+      tags: [push, push-build, never]
+
+    # Check if images already exist locally
+    - name: Check if API image exists
+      ansible.builtin.shell: docker images -q {{ images.api }}:{{ image_tag }} 2>/dev/null
+      register: api_image_exists
+      changed_when: false
+      tags: [push, never]
+
+    - name: Check if Worker image exists
+      ansible.builtin.shell: docker images -q {{ images.worker }}:{{ image_tag }} 2>/dev/null
+      register: worker_image_exists
+      changed_when: false
+      tags: [push, never]
+
+    - name: Check if Watcher image exists
+      ansible.builtin.shell: docker images -q {{ images.watcher }}:{{ image_tag }} 2>/dev/null
+      register: watcher_image_exists
+      changed_when: false
+      tags: [push, never]
+
+    # API - build only if not exists (push tag) or always (push-build tag)
+    - name: "API image (1/3) - already exists, pushing..."
+      ansible.builtin.debug:
+        msg: "Image exists locally, pushing: {{ images.api }}:{{ image_tag }}"
+      when: api_image_exists.stdout | length > 0
+      tags: [push, never]
+
+    - name: Push existing API image
+      ansible.builtin.shell: docker push {{ images.api }}:{{ image_tag }} 2>&1
+      register: api_push
+      when: api_image_exists.stdout | length > 0
+      tags: [push, never]
+
+    - name: "API image (1/3) - building and pushing..."
+      ansible.builtin.debug:
+        msg: "Building and pushing: {{ images.api }}:{{ image_tag }}"
+      when: api_image_exists.stdout | length == 0
+      tags: [push, never]
+
+    - name: Build and push API image
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.api }}:{{ image_tag }} \
+          -f Dockerfile.api --push . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: api_push
+      when: api_image_exists.stdout | length == 0
+      tags: [push, never]
+
+    # Force build API (push-build tag)
+    - name: "Force building API image (1/3)..."
+      ansible.builtin.debug:
+        msg: "Building and pushing: {{ images.api }}:{{ image_tag }}"
+      tags: [push-build, never]
+
+    - name: Force build and push API image
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.api }}:{{ image_tag }} \
+          -f Dockerfile.api --push . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      tags: [push-build, never]
+
+    # Worker - build only if not exists (push tag) or always (push-build tag)
+    - name: "Worker image (2/3) - already exists, pushing..."
+      ansible.builtin.debug:
+        msg: "Image exists locally, pushing: {{ images.worker }}:{{ image_tag }}"
+      when: worker_image_exists.stdout | length > 0
+      tags: [push, never]
+
+    - name: Push existing Worker image
+      ansible.builtin.shell: docker push {{ images.worker }}:{{ image_tag }} 2>&1
+      register: worker_push
+      when: worker_image_exists.stdout | length > 0
+      tags: [push, never]
+
+    - name: "Worker image (2/3) - building and pushing..."
+      ansible.builtin.debug:
+        msg: "Building and pushing: {{ images.worker }}:{{ image_tag }} (this takes a while)"
+      when: worker_image_exists.stdout | length == 0
+      tags: [push, never]
+
+    - name: Build and push Worker image
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.worker }}:{{ image_tag }} \
+          -f Dockerfile.worker --push . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: worker_push
+      when: worker_image_exists.stdout | length == 0
+      tags: [push, never]
+
+    # Force build Worker (push-build tag)
+    - name: "Force building Worker image (2/3)..."
+      ansible.builtin.debug:
+        msg: "Building and pushing: {{ images.worker }}:{{ image_tag }}"
+      tags: [push-build, never]
+
+    - name: Force build and push Worker image
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.worker }}:{{ image_tag }} \
+          -f Dockerfile.worker --push . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      tags: [push-build, never]
+
+    # Watcher - build only if not exists (push tag) or always (push-build tag)
+    - name: "Watcher image (3/3) - already exists, pushing..."
+      ansible.builtin.debug:
+        msg: "Image exists locally, pushing: {{ images.watcher }}:{{ image_tag }}"
+      when: watcher_image_exists.stdout | length > 0
+      tags: [push, never]
+
+    - name: Push existing Watcher image
+      ansible.builtin.shell: docker push {{ images.watcher }}:{{ image_tag }} 2>&1
+      register: watcher_push
+      when: watcher_image_exists.stdout | length > 0
+      tags: [push, never]
+
+    - name: "Watcher image (3/3) - building and pushing..."
+      ansible.builtin.debug:
+        msg: "Building and pushing: {{ images.watcher }}:{{ image_tag }}"
+      when: watcher_image_exists.stdout | length == 0
+      tags: [push, never]
+
+    - name: Build and push Watcher image
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.watcher }}:{{ image_tag }} \
+          -f Dockerfile.watcher --push . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: watcher_push
+      when: watcher_image_exists.stdout | length == 0
+      tags: [push, never]
+
+    # Force build Watcher (push-build tag)
+    - name: "Force building Watcher image (3/3)..."
+      ansible.builtin.debug:
+        msg: "Building and pushing: {{ images.watcher }}:{{ image_tag }}"
+      tags: [push-build, never]
+
+    - name: Force build and push Watcher image
+      ansible.builtin.shell: |
+        docker buildx build --platform linux/amd64 \
+          --progress=plain \
+          -t {{ images.watcher }}:{{ image_tag }} \
+          -f Dockerfile.watcher --push . 2>&1
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      tags: [push-build, never]
+
+    - name: Push complete
+      ansible.builtin.debug:
+        msg: |
+          Images pushed to GHCR:
+          - {{ images.api }}:{{ image_tag }}
+          - {{ images.worker }}:{{ image_tag }}
+          - {{ images.watcher }}:{{ image_tag }}
+      tags: [push, push-build, never]
+
+    # ===========================================
+    # Tag: logs - View local container logs
+    # ===========================================
+    - name: Show container logs
+      ansible.builtin.command: docker compose logs --tail=50
+      args:
+        chdir: "{{ playbook_dir }}/{{ project_root }}"
+      register: logs_output
+      tags: [logs, never]
+
+    - name: Display logs
+      ansible.builtin.debug:
+        msg: "{{ logs_output.stdout_lines }}"
+      tags: [logs, never]

@@ -1,4 +1,4 @@
-# Watcher Dockerfile - Folder watcher service
+# Watcher Dockerfile - Folder watcher service (lightweight, no ML dependencies)
 FROM python:3.11-slim
 
 # Install system dependencies (ffmpeg for file hash computation)
@@ -9,11 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for caching
-COPY requirements.txt .
+# Copy only base requirements (no ML deps needed for watcher)
+COPY requirements-base.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-base.txt
 
 # Copy application code
 COPY app/ ./app/
@@ -24,4 +24,3 @@ USER whisper
 
 # Run the folder watcher
 CMD ["python", "-m", "app.watcher.folder_watcher"]
-

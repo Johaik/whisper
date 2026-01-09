@@ -1,0 +1,32 @@
+# Docker Compose Override for Local Development
+# This file is automatically merged with docker-compose.yml when running locally
+# It enables local builds instead of pulling from ghcr.io
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    # Override image to use local build
+    image: whisper-api:local
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    # Override image to use local build
+    image: whisper-worker:local
+
+  watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
+    # Override image to use local build
+    image: whisper-watcher:local
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    # Override image to use local build
+    image: whisper-api:local

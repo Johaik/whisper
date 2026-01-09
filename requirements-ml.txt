@@ -1,0 +1,20 @@
+# ML dependencies - for worker service only
+# ============================================
+# Uses CPU-only PyTorch to reduce image size by ~2GB
+
+# CPU-only PyTorch index
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Core ML dependencies
+numpy
+torch>=2.0.0,<2.6.0
+torchaudio>=2.0.0,<2.6.0
+tqdm
+
+# Whisper (using faster-whisper only - openai-whisper not needed)
+faster-whisper>=1.0.0
+
+# Diarization (requires HuggingFace token)
+pyannote.audio>=3.1.0,<3.4.0
+huggingface_hub>=0.20.0,<0.25.0
+matplotlib  # Required by pyannote

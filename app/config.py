@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     watcher_poll_interval: int = 30  # seconds between folder scans
     watcher_stable_seconds: int = 10  # file must be unmodified for this long
 
+    # Source sync settings (for Google Drive integration)
+    sync_enabled: bool = False  # Enable automatic syncing from source folder
+    source_dir: str = "/data/source"  # Source folder (Google Drive mount)
+    sync_batch_size: int = 20  # Number of files to copy per batch
+
     # Google Contacts API settings (optional, for caller name lookup)
     google_client_id: str | None = None
     google_client_secret: str | None = None

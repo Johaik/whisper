@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # PostgreSQL database
   postgres:
@@ -37,9 +35,7 @@ services:
 
   # FastAPI server
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    image: ghcr.io/johaik/whisper-api:latest
     container_name: whisper-api
     restart: unless-stopped
     ports:
@@ -73,9 +69,7 @@ services:
 
   # Celery worker
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
+    image: ghcr.io/johaik/whisper-worker:latest
     container_name: whisper-worker
     restart: unless-stopped
     environment:
@@ -107,9 +101,7 @@ services:
 
   # Folder watcher - auto-discovers new files
   watcher:
-    build:
-      context: .
-      dockerfile: Dockerfile.watcher
+    image: ghcr.io/johaik/whisper-watcher:latest
     container_name: whisper-watcher
     restart: unless-stopped
     environment:
@@ -129,9 +121,7 @@ services:
 
   # Database migration runner (one-shot)
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    image: ghcr.io/johaik/whisper-api:latest
     container_name: whisper-migrate
     environment:
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
@@ -157,4 +147,3 @@ volumes:
   postgres_data:
   redis_data:
   model_cache:
-

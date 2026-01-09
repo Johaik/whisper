@@ -16,6 +16,7 @@ from app.api.schemas import (
     HealthResponse,
     IngestRequest,
     IngestResponse,
+    QueueStatusResponse,
     RecordingDetail,
     RecordingList,
     RecordingListItem,
@@ -76,6 +77,52 @@ async def health_check(
         database=db_status,
         redis=redis_status,
         workers=workers,
+    )
+
+
+@router.get("/queue/status", response_model=QueueStatusResponse)
+async def queue_status(
+    session: AsyncSessionDep,
+    threshold: int = Query(default=20, description="Queue threshold"),
+) -> QueueStatusResponse:
+    """Get queue status for batch sync decisions.
+    
+    Used by the batch-copy script to determine if more files should be copied.
+    No authentication required for simpler integration.
+    """
+    # Count recordings by status
+    queued_count = await session.scalar(
+        select(func.count(Recording.id)).where(
+            Recording.status == RecordingStatus.QUEUED
+        )
+    ) or 0
+    
+    processing_count = await session.scalar(
+        select(func.count(Recording.id)).where(
+            Recording.status == RecordingStatus.PROCESSING
+        )
+    ) or 0
+    
+    # Check active Celery tasks
+    active_tasks = 0
+    try:
+        from app.worker.celery_app import celery_app
+        inspect = celery_app.control.inspect()
+        active = inspect.active()
+        if active:
+            active_tasks = sum(len(tasks) for tasks in active.values())
+    except Exception as e:
+        logger.warning(f"Could not get Celery status: {e}")
+    
+    total_pending = queued_count + processing_count
+    can_accept = total_pending < threshold
+    
+    return QueueStatusResponse(
+        queued=queued_count,
+        processing=processing_count,
+        active_tasks=active_tasks,
+        can_accept_more=can_accept,
+        threshold=threshold,
     )
 
 
