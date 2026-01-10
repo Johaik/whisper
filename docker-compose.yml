@@ -143,7 +143,56 @@ services:
     profiles:
       - tools
 
+  # ===========================================
+  # Monitoring Stack (lightweight exporters)
+  # ===========================================
+
+  # Flower - Celery monitoring UI and metrics
+  flower:
+    image: mher/flower:2.0
+    container_name: whisper-flower
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_PERSISTENT=true
+      - FLOWER_DB=/data/flower.db
+      - FLOWER_BASIC_AUTH=${FLOWER_AUTH:-admin:admin}
+    volumes:
+      - flower_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # PostgreSQL metrics exporter for Prometheus
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: whisper-postgres-exporter
+    restart: unless-stopped
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://whisper:whisper@postgres:5432/whisper?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Redis metrics exporter for Prometheus
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: whisper-redis-exporter
+    restart: unless-stopped
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
   model_cache:
+  flower_data:

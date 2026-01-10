@@ -26,6 +26,108 @@
         - "{{ win_app_dir }}\\redis-data"
 
     # ===========================================
+    # OpenSSH Server (for remote monitoring access)
+    # ===========================================
+    - name: Install OpenSSH Server Windows capability
+      ansible.windows.win_powershell:
+        script: |
+          # Check if OpenSSH Server is already installed
+          $sshCapability = Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH.Server*'
+          
+          if ($sshCapability.State -eq 'Installed') {
+            Write-Output "OpenSSH Server is already installed"
+          } else {
+            Write-Output "Installing OpenSSH Server..."
+            Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+            Write-Output "OpenSSH Server installed successfully"
+          }
+
+    - name: Configure and start OpenSSH Server service
+      ansible.windows.win_powershell:
+        script: |
+          # Set sshd service to start automatically
+          Set-Service -Name sshd -StartupType Automatic
+          
+          # Start the service if not running
+          $service = Get-Service -Name sshd
+          if ($service.Status -ne 'Running') {
+            Start-Service sshd
+            Write-Output "OpenSSH Server started"
+          } else {
+            Write-Output "OpenSSH Server is already running"
+          }
+          
+          # Set default shell to PowerShell (optional but recommended)
+          New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell `
+            -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" `
+            -PropertyType String -Force | Out-Null
+          
+          Write-Output "OpenSSH Server configured with PowerShell as default shell"
+
+    - name: Open firewall port for SSH (port 22)
+      ansible.windows.win_powershell:
+        script: |
+          # Check if rule already exists
+          $existingRule = Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue
+          
+          if ($existingRule) {
+            Write-Output "SSH firewall rule already exists"
+          } else {
+            # Create firewall rule for SSH
+            New-NetFirewallRule -Name "OpenSSH-Server-In-TCP" `
+              -DisplayName "OpenSSH Server (sshd) - Remote Monitoring" `
+              -Description "Allow inbound SSH for remote monitoring access" `
+              -Enabled True `
+              -Direction Inbound `
+              -Protocol TCP `
+              -Action Allow `
+              -LocalPort 22
+            
+            Write-Output "Firewall rule created for SSH (port 22)"
+          }
+
+    # ===========================================
+    # Windows Exporter (Host Metrics)
+    # ===========================================
+    - name: Install Windows Exporter for host metrics
+      ansible.windows.win_powershell:
+        script: |
+          $exporterPath = "C:\Program Files\windows_exporter"
+          $serviceName = "windows_exporter"
+          $version = "0.25.1"
+          $downloadUrl = "https://github.com/prometheus-community/windows_exporter/releases/download/v$version/windows_exporter-$version-amd64.exe"
+          
+          # Check if already installed
+          $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+          if ($service) {
+            Write-Output "Windows Exporter already installed"
+            return
+          }
+          
+          Write-Output "Installing Windows Exporter v$version..."
+          
+          # Create directory
+          New-Item -ItemType Directory -Path $exporterPath -Force | Out-Null
+          
+          # Download
+          $exePath = "$exporterPath\windows_exporter.exe"
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing
+          
+          # Install as service
+          $collectors = "cpu,cs,logical_disk,memory,net,os,process,system,thermalzone"
+          New-Service -Name $serviceName `
+            -BinaryPathName "`"$exePath`" --collectors.enabled=$collectors --web.listen-address=127.0.0.1:9182" `
+            -DisplayName "Prometheus Windows Exporter" `
+            -Description "Exports Windows host metrics for Prometheus" `
+            -StartupType Automatic | Out-Null
+          
+          # Start service
+          Start-Service -Name $serviceName
+          
+          Write-Output "Windows Exporter installed and started on port 9182"
+
+    # ===========================================
     # Registry Login
     # ===========================================
     # Write credentials directly to config.json (WinRM can't use credential store)
@@ -322,6 +424,15 @@
           Write-Output "=== Deployment Complete ==="
           Write-Output "API available at: http://localhost:8000"
           Write-Output "Adminer at: http://localhost:8080 (if tools profile enabled)"
+          Write-Output ""
+          Write-Output "=== Monitoring Endpoints (via SSH tunnel) ==="
+          Write-Output "Flower (Celery UI): http://localhost:5555"
+          Write-Output "API Metrics: http://localhost:8000/metrics"
+          Write-Output "Postgres Exporter: http://localhost:9187/metrics"
+          Write-Output "Redis Exporter: http://localhost:9121/metrics"
+          Write-Output ""
+          Write-Output "SSH tunnel command from Mac:"
+          Write-Output "  ssh -L 8000:localhost:8000 -L 5555:localhost:5555 -L 9187:localhost:9187 -L 9121:localhost:9121 user@this-server -N"
       register: status
 
     - name: Display status

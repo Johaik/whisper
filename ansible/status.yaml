@@ -99,6 +99,47 @@
           }
           Write-Output ""
           
+          # Celery Task Metrics (same as Grafana)
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ CELERY TASK METRICS (Flower)                                │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          try {
+            $metrics = Invoke-WebRequest -Uri "http://localhost:5555/metrics" -UseBasicParsing -TimeoutSec 5
+            $content = $metrics.Content
+            
+            # Parse Flower metrics
+            $received = 0
+            $succeeded = 0
+            $failed = 0
+            $started = 0
+            
+            $content -split "`n" | ForEach-Object {
+              if ($_ -match 'flower_events_total\{.*type="task-received".*\}\s+(\d+)') {
+                $received += [int]$matches[1]
+              }
+              if ($_ -match 'flower_events_total\{.*type="task-succeeded".*\}\s+(\d+)') {
+                $succeeded += [int]$matches[1]
+              }
+              if ($_ -match 'flower_events_total\{.*type="task-failed".*\}\s+(\d+)') {
+                $failed += [int]$matches[1]
+              }
+              if ($_ -match 'flower_events_total\{.*type="task-started".*\}\s+(\d+)') {
+                $started += [int]$matches[1]
+              }
+            }
+            
+            $pending = $received - $succeeded - $failed
+            
+            Write-Output "  Received:    $received tasks"
+            Write-Output "  Succeeded:   $succeeded tasks"
+            Write-Output "  Failed:      $failed tasks"
+            Write-Output "  Pending:     $pending tasks"
+            Write-Output "  In Progress: $($started - $succeeded - $failed) tasks"
+          } catch {
+            Write-Output "  Flower metrics not available"
+          }
+          Write-Output ""
+          
           # Recent Worker Activity
           Write-Output "┌─────────────────────────────────────────────────────────────┐"
           Write-Output "│ RECENT WORKER ACTIVITY                                      │"

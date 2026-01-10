@@ -1,7 +1,7 @@
 # Whisper Transcription Service - Makefile
 # ==========================================
 
-.PHONY: help dev stop build push push-build deploy logs status clean login
+.PHONY: help dev stop build push push-build deploy logs status clean login monitor tunnel
 
 # Token file path
 TOKEN_FILE := ansible/.ghcr_token
@@ -25,6 +25,10 @@ help:
 	@echo "Remote Deployment (Windows):"
 	@echo "  make deploy   - Deploy to Windows (pull + run)"
 	@echo "  make status   - Check Windows container status"
+	@echo ""
+	@echo "Monitoring (Mac):"
+	@echo "  make tunnel   - Start SSH tunnel to Windows"
+	@echo "  make monitor  - Start Prometheus + Grafana stack"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean    - Remove local containers and images"
@@ -99,6 +103,31 @@ deploy:
 status:
 	@echo "Checking Windows deployment status..."
 	@cd ansible && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ansible-playbook status.yaml
+
+# ==========================================
+# Monitoring
+# ==========================================
+
+tunnel:
+	@echo "Starting SSH tunnel to Windows..."
+	@echo "This will forward monitoring ports from Windows to localhost"
+	@echo ""
+	@cd monitoring && ./tunnel.sh johaik@192.168.50.9
+
+monitor:
+	@echo "Starting monitoring stack (Prometheus + Grafana)..."
+	@cd monitoring && docker compose up -d
+	@echo ""
+	@echo "Monitoring started:"
+	@echo "  Grafana:    http://localhost:3000 (admin/admin)"
+	@echo "  Prometheus: http://localhost:9090"
+	@echo "  Flower:     http://localhost:5555 (via tunnel)"
+	@echo ""
+	@echo "Note: Make sure the tunnel is running (make tunnel)"
+
+monitor-stop:
+	@echo "Stopping monitoring stack..."
+	@cd monitoring && docker compose down
 
 # ==========================================
 # Utilities

@@ -1,0 +1,68 @@
+# Prometheus Configuration
+# Scrapes metrics from Windows server via SSH tunnel
+#
+# All targets point to host.docker.internal which resolves to the Mac host
+# where the SSH tunnel forwards ports from the Windows server
+
+global:
+  scrape_interval: 30s      # Less frequent to reduce load on Windows
+  evaluation_interval: 30s
+  scrape_timeout: 10s
+
+# Alerting (optional - configure if needed)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'monitoring-mac'
+
+  # FastAPI application metrics
+  # Endpoint: /metrics (prometheus-fastapi-instrumentator)
+  - job_name: 'whisper-api'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+        labels:
+          instance: 'whisper-windows'
+          service: 'api'
+    metrics_path: /metrics
+
+  # Flower - Celery monitoring
+  # Provides task and worker metrics
+  - job_name: 'flower'
+    static_configs:
+      - targets: ['host.docker.internal:5555']
+        labels:
+          instance: 'whisper-windows'
+          service: 'celery'
+    metrics_path: /metrics
+
+  # PostgreSQL metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['host.docker.internal:9187']
+        labels:
+          instance: 'whisper-windows'
+          service: 'postgres'
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['host.docker.internal:9121']
+        labels:
+          instance: 'whisper-windows'
+          service: 'redis'
+
+  # Windows host metrics (CPU, RAM, disk, network)
+  - job_name: 'windows'
+    static_configs:
+      - targets: ['host.docker.internal:9182']
+        labels:
+          instance: 'whisper-windows'
+          service: 'host'
