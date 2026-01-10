@@ -2,8 +2,8 @@
 winhost ansible_host=192.168.50.9
 
 [windows:vars]
-ansible_user=REDACTED_USER
-ansible_password=REDACTED_PASSWORD
+ansible_user=your_username
+ansible_password=YOUR_PASSWORD_HERE
 ansible_connection=winrm
 ansible_winrm_transport=ntlm
 ansible_port=5985

@@ -83,6 +83,9 @@ ansible/.google_client_id
 ansible/.google_client_secret
 ansible/.google_refresh_token
 
+# Ansible inventory with credentials - use inventory.ini.example as template
+ansible/inventory.ini
+
 # Docker override (local dev specific)
 # docker-compose.override.yml  # Uncomment if you want to ignore this
 
