@@ -52,7 +52,7 @@ class TestNormalizePhoneForComparison:
         """International format normalized to digits."""
         service = GoogleContactsService()
         result = service._normalize_phone_for_comparison("+15551234567")
-        assert result == "678680886"  # Last 9 digits
+        assert result == "551234567"  # Last 9 digits
 
     def test_normalize_with_spaces_and_dashes(self) -> None:
         """Removes formatting characters."""
@@ -80,14 +80,14 @@ class TestLookupContactName:
         """Returns None when contacts not loaded."""
         service = GoogleContactsService()
         # Don't load contacts, just check cache
-        result = service._contacts_cache.get("678680886")
+        result = service._contacts_cache.get("551234567")
         assert result is None
 
     def test_lookup_with_cached_contact(self) -> None:
         """Returns name when contact is in cache."""
         service = GoogleContactsService()
         service._contacts_cache = {
-            "678680886": "John Doe",
+            "551234567": "John Doe",
             "037111121": "Jane Smith",
         }
         service._all_contacts_loaded = True
