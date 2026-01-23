@@ -130,17 +130,29 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         # Step 3: Diarization (optional)
         segments = transcript_result.segments
         diarization_enabled = settings.diarization_enabled
+        diarization_pending = False
+        diarization_skip_reason = None
         speaker_count = 0
 
         if diarization_enabled:
-            logger.info("Step 3: Running diarization...")
-            try:
-                diarization = diarize_audio(file_path)
-                segments = assign_speakers_to_transcript(segments, diarization)
-                speaker_count = diarization.speaker_count
-            except Exception as e:
-                logger.warning(f"Diarization failed (continuing without): {e}")
+            # Check if duration exceeds threshold - skip diarization for long recordings
+            if metadata.duration_sec and metadata.duration_sec > settings.diarization_max_duration_sec:
+                logger.info(
+                    f"Skipping diarization: duration {metadata.duration_sec:.0f}s > "
+                    f"{settings.diarization_max_duration_sec}s threshold"
+                )
                 diarization_enabled = False
+                diarization_pending = True
+                diarization_skip_reason = f"duration_exceeded:{metadata.duration_sec:.0f}s"
+            else:
+                logger.info("Step 3: Running diarization...")
+                try:
+                    diarization = diarize_audio(file_path)
+                    segments = assign_speakers_to_transcript(segments, diarization)
+                    speaker_count = diarization.speaker_count
+                except Exception as e:
+                    logger.warning(f"Diarization failed (continuing without): {e}")
+                    diarization_enabled = False
 
         # Step 4: Compute analytics
         logger.info("Step 4: Computing analytics...")
@@ -198,6 +210,8 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         if enrichment:
             enrichment.speaker_count = speaker_count
             enrichment.diarization_enabled = diarization_enabled
+            enrichment.diarization_pending = diarization_pending
+            enrichment.diarization_skip_reason = diarization_skip_reason
             enrichment.total_speech_time = analytics.total_speech_time
             enrichment.total_silence_time = analytics.total_silence_time
             enrichment.talk_time_ratio = analytics.talk_time_ratio
@@ -213,6 +227,8 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                 recording_id=recording.id,
                 speaker_count=speaker_count,
                 diarization_enabled=diarization_enabled,
+                diarization_pending=diarization_pending,
+                diarization_skip_reason=diarization_skip_reason,
                 total_speech_time=analytics.total_speech_time,
                 total_silence_time=analytics.total_silence_time,
                 talk_time_ratio=analytics.talk_time_ratio,

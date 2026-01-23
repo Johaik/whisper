@@ -41,6 +41,7 @@ class Settings(BaseSettings):
 
     # Diarization settings
     diarization_enabled: bool = True
+    diarization_max_duration_sec: int = 600  # Skip diarization for calls > 10 minutes
     huggingface_token: str | None = None  # Required for pyannote
 
     # Worker settings

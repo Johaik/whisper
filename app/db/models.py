@@ -169,6 +169,8 @@ class Enrichment(Base):
     # Diarization info
     speaker_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     diarization_enabled: Mapped[bool] = mapped_column(default=False)
+    diarization_pending: Mapped[bool] = mapped_column(default=False)  # True if skipped due to duration
+    diarization_skip_reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     # Talk/silence analytics
     total_speech_time: Mapped[float | None] = mapped_column(Float, nullable=True)
