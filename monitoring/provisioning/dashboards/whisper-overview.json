@@ -17,7 +17,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -46,8 +46,8 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(flower_events_total{type=\"task-received\"}) - sum(flower_events_total{type=\"task-succeeded\"}) - sum(flower_events_total{type=\"task-failed\"} or vector(0))",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(sum(flower_events_total{type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{type=\"task-failed\"}) or vector(0))",
           "legendFormat": "Pending"
         }
       ],
@@ -55,7 +55,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -77,8 +77,8 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(flower_events_total{type=\"task-succeeded\"})",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)",
           "legendFormat": "Completed"
         }
       ],
@@ -86,7 +86,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -108,7 +108,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(flower_events_total{type=\"task-failed\"}) or vector(0)",
           "legendFormat": "Failed"
         }
@@ -117,7 +117,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -139,7 +139,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(flower_worker_online)",
           "legendFormat": "Workers"
         }
@@ -148,7 +148,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -170,7 +170,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(flower_worker_number_of_currently_executing_tasks)",
           "legendFormat": "Active"
         }
@@ -179,7 +179,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -216,8 +216,8 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(flower_task_runtime_seconds_sum[5m]) / rate(flower_task_runtime_seconds_count[5m])",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(rate(flower_task_runtime_seconds_sum[5m]) / rate(flower_task_runtime_seconds_count[5m])) or vector(0)",
           "legendFormat": "Avg Task Duration"
         }
       ],
@@ -225,7 +225,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -262,13 +262,13 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(flower_events_total{type=\"task-succeeded\"}[1h])",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "increase(flower_events_total{type=\"task-succeeded\"}[1h]) or vector(0)",
           "legendFormat": "Succeeded"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(flower_events_total{type=\"task-failed\"}[1h])",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "increase(flower_events_total{type=\"task-failed\"}[1h]) or vector(0)",
           "legendFormat": "Failed"
         }
       ],
@@ -284,7 +284,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -321,7 +321,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(http_requests_total{job=\"whisper-api\"}[5m])) by (handler)",
           "legendFormat": "{{handler}}"
         }
@@ -330,7 +330,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -367,17 +367,17 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"whisper-api\"}[5m])) by (le))",
           "legendFormat": "p50"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"whisper-api\"}[5m])) by (le))",
           "legendFormat": "p95"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"whisper-api\"}[5m])) by (le))",
           "legendFormat": "p99"
         }
@@ -394,7 +394,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -416,7 +416,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(pg_stat_activity_count{datname=\"whisper\"})",
           "legendFormat": "Connections"
         }
@@ -425,7 +425,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -447,7 +447,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "pg_database_size_bytes{datname=\"whisper\"}",
           "legendFormat": "Size"
         }
@@ -456,7 +456,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -478,7 +478,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(pg_stat_user_tables_n_live_tup{relname=\"recordings\"})",
           "legendFormat": "Recordings"
         }
@@ -487,7 +487,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -509,7 +509,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(pg_locks_count)",
           "legendFormat": "Locks"
         }
@@ -518,7 +518,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -555,17 +555,17 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(pg_stat_database_tup_inserted{datname=\"whisper\"}[5m]))",
           "legendFormat": "Inserts/s"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(pg_stat_database_tup_updated{datname=\"whisper\"}[5m]))",
           "legendFormat": "Updates/s"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(pg_stat_database_tup_fetched{datname=\"whisper\"}[5m]))",
           "legendFormat": "Fetched/s"
         }
@@ -574,7 +574,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -611,7 +611,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "pg_database_size_bytes{datname=\"whisper\"}",
           "legendFormat": "Database Size"
         }
@@ -628,7 +628,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -650,7 +650,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "redis_memory_used_bytes",
           "legendFormat": "Memory"
         }
@@ -659,7 +659,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -681,7 +681,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "redis_connected_clients",
           "legendFormat": "Clients"
         }
@@ -690,7 +690,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -712,7 +712,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total)",
           "legendFormat": "Hit Rate"
         }
@@ -721,7 +721,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -743,7 +743,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "redis_uptime_in_seconds",
           "legendFormat": "Uptime"
         }
@@ -752,7 +752,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -789,12 +789,12 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "redis_memory_used_bytes",
           "legendFormat": "Used"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "redis_memory_max_bytes",
           "legendFormat": "Max"
         }
@@ -803,7 +803,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -840,7 +840,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "rate(redis_commands_processed_total[5m])",
           "legendFormat": "Commands/s"
         }
@@ -857,7 +857,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -879,7 +879,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "100 - (avg(rate(windows_cpu_time_total{mode=\"idle\"}[1m])) * 100)",
           "legendFormat": "CPU"
         }
@@ -888,7 +888,7 @@
       "type": "gauge"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -910,7 +910,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "100 - ((windows_os_physical_memory_free_bytes / windows_cs_physical_memory_bytes) * 100)",
           "legendFormat": "Memory"
         }
@@ -919,7 +919,7 @@
       "type": "gauge"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -941,7 +941,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "windows_cs_physical_memory_bytes - windows_os_physical_memory_free_bytes",
           "legendFormat": "Used RAM"
         }
@@ -950,7 +950,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -972,7 +972,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "time() - windows_system_system_up_time",
           "legendFormat": "Uptime"
         }
@@ -981,7 +981,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -1020,12 +1020,12 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "100 - (avg(rate(windows_cpu_time_total{mode=\"idle\"}[1m])) * 100)",
           "legendFormat": "CPU %"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "100 - ((windows_os_physical_memory_free_bytes / windows_cs_physical_memory_bytes) * 100)",
           "legendFormat": "Memory %"
         }
@@ -1034,7 +1034,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -1071,12 +1071,12 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(windows_net_bytes_received_total[5m]))",
           "legendFormat": "Received"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(windows_net_bytes_sent_total[5m]))",
           "legendFormat": "Sent"
         }
@@ -1085,7 +1085,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -1122,12 +1122,12 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(windows_logical_disk_read_bytes_total[5m])) by (volume)",
           "legendFormat": "Read {{volume}}"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "sum(rate(windows_logical_disk_write_bytes_total[5m])) by (volume)",
           "legendFormat": "Write {{volume}}"
         }
@@ -1136,7 +1136,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -1160,7 +1160,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "expr": "100 - ((windows_logical_disk_free_bytes / windows_logical_disk_size_bytes) * 100)",
           "legendFormat": "{{volume}}"
         }
@@ -1173,7 +1173,22 @@
   "schemaVersion": 38,
   "style": "dark",
   "tags": ["whisper", "transcription", "celery", "postgres", "redis"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",

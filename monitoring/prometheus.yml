@@ -33,9 +33,10 @@ scrape_configs:
           service: 'api'
     metrics_path: /metrics
 
-  # Flower - Celery monitoring
+  # Flower - Celery monitoring (must be reachable via SSH tunnel on Mac port 5555)
   # Provides task and worker metrics
   - job_name: 'flower'
+    scrape_timeout: 15s
     static_configs:
       - targets: ['host.docker.internal:5555']
         labels:

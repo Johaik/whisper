@@ -14,6 +14,11 @@
 - `python -m app.watcher.folder_watcher` starts the watcher.
 - `make dev` / `make stop` orchestrate local Docker via `ansible/` for the standard setup.
 
+### Working with a virtual environment (venv)
+- Create and use a venv for local runs and tests: `make venv` then `source .venv/bin/activate` (or on Windows: `.venv\\Scripts\\activate`).
+- With venv activated: `pip install -r requirements.txt`, then `pytest`, `uvicorn app.main:app --reload`, etc.
+- Or run without activating: `make test` (uses `.venv/bin/python` and `.venv/bin/pytest` if venv exists).
+
 ## Coding Style & Naming Conventions
 - Python code follows standard PEP 8 conventions: 4-space indentation, `snake_case` for functions/variables, `PascalCase` for classes.
 - Keep modules focused by feature (`processors`, `services`, `watcher`, `worker`).

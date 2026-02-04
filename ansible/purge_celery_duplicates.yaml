@@ -1,0 +1,23 @@
+---
+# One-off: purge duplicate tasks from Celery Redis queue on Windows.
+# Run: cd ansible && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ansible-playbook purge_celery_duplicates.yaml -i inventory.ini
+- name: Purge duplicate Celery queue tasks
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: Copy purge script to Windows app dir
+      ansible.windows.win_copy:
+        src: ../scripts/purge_celery_duplicates.py
+        dest: "C:\\app\\purge_celery_duplicates.py"
+        force: true
+
+    - name: Run purge script inside worker container
+      ansible.windows.win_shell: |
+        docker cp C:\app\purge_celery_duplicates.py whisper-worker:/tmp/purge_celery_duplicates.py
+        docker exec -e REDIS_URL=redis://redis:6379/0 whisper-worker python /tmp/purge_celery_duplicates.py
+      register: purge_out
+
+    - name: Show purge result
+      ansible.builtin.debug:
+        var: purge_out.stdout_lines

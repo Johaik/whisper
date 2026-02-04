@@ -44,17 +44,15 @@ class TestWatcherProcessesStableFile:
     """End-to-end test: file added, detected, queued."""
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
-    @patch("app.watcher.folder_watcher.process_recording")
     @patch("app.watcher.folder_watcher.compute_file_hash")
     def test_stable_file_gets_queued(
         self,
         mock_hash: MagicMock,
-        mock_task: MagicMock,
         mock_session_class: MagicMock,
         watch_folder: Path,
         watcher: FolderWatcher,
     ) -> None:
-        """A stable file is detected and queued."""
+        """A stable file is detected and a record is queued (periodic enqueue_pending_recordings will enqueue)."""
         # Create a stable file
         test_file = create_stable_file(watch_folder, "test_audio.m4a")
 
@@ -70,14 +68,11 @@ class TestWatcherProcessesStableFile:
         assert stats1["scanned"] == 1
         assert stats1["queued"] == 0
 
-        # Second poll - file is now ready
+        # Second poll - file is now ready, record created with QUEUED
         stats2 = watcher.poll_once()
         assert stats2["scanned"] == 1
         assert stats2["ready"] == 1
         assert stats2["queued"] == 1
-
-        # Verify task was queued
-        mock_task.delay.assert_called_once()
 
 
 class TestWatcherWaitsForStability:
@@ -135,17 +130,15 @@ class TestWatcherHandlesConcurrentFiles:
     """Multiple files queued correctly."""
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
-    @patch("app.watcher.folder_watcher.process_recording")
     @patch("app.watcher.folder_watcher.compute_file_hash")
     def test_multiple_files_processed(
         self,
         mock_hash: MagicMock,
-        mock_task: MagicMock,
         mock_session_class: MagicMock,
         watch_folder: Path,
         watcher: FolderWatcher,
     ) -> None:
-        """Multiple stable files are all queued."""
+        """Multiple stable files are all queued (periodic enqueue_pending_recordings will enqueue)."""
         # Create multiple stable files
         create_stable_file(watch_folder, "audio1.m4a")
         create_stable_file(watch_folder, "audio2.mp3")
@@ -170,14 +163,11 @@ class TestWatcherHandlesConcurrentFiles:
         assert stats1["scanned"] == 3
         assert stats1["queued"] == 0
 
-        # Second poll - all files ready
+        # Second poll - all files ready, three records created with QUEUED
         stats2 = watcher.poll_once()
         assert stats2["scanned"] == 3
         assert stats2["ready"] == 3
         assert stats2["queued"] == 3
-
-        # Verify all tasks were queued
-        assert mock_task.delay.call_count == 3
 
 
 class TestWatcherWithDatabase:
@@ -195,10 +185,8 @@ class TestWatcherWithDatabase:
         )
         return watcher, db_session
 
-    @patch("app.watcher.folder_watcher.process_recording")
     def test_creates_recording_in_database(
         self,
-        mock_task: MagicMock,
         watch_folder: Path,
         db_session: Session,
     ) -> None:
@@ -234,10 +222,8 @@ class TestWatcherWithDatabase:
         assert recording.file_size > 0
         assert recording.file_hash is not None
 
-    @patch("app.watcher.folder_watcher.process_recording")
     def test_skips_already_processed_file(
         self,
-        mock_task: MagicMock,
         watch_folder: Path,
         db_session: Session,
     ) -> None:
@@ -276,7 +262,4 @@ class TestWatcherWithDatabase:
             assert stats["ready"] == 1
             assert stats["skipped"] == 1
             assert stats["queued"] == 0
-
-        # Task should not be queued
-        mock_task.delay.assert_not_called()
 

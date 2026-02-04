@@ -1,7 +1,12 @@
 # Whisper Transcription Service - Makefile
 # ==========================================
 
-.PHONY: help dev stop build push push-build deploy logs status clean login monitor tunnel
+.PHONY: help dev stop build push push-build deploy logs status clean login monitor tunnel venv ensure-venv test test-unit test-integration
+
+VENV := .venv
+PYTHON := $(VENV)/bin/python
+PIP := $(VENV)/bin/pip
+PYTEST := $(VENV)/bin/pytest
 
 # Token file path
 TOKEN_FILE := ansible/.ghcr_token
@@ -15,6 +20,12 @@ help:
 	@echo "  make dev      - Start local development environment"
 	@echo "  make stop     - Stop local development environment"
 	@echo "  make logs     - View local container logs"
+	@echo ""
+	@echo "Venv (local Python):"
+	@echo "  make venv     - Create .venv and install requirements"
+	@echo "  make test     - Run pytest (uses .venv if present)"
+	@echo "  make test-unit - Run unit tests only"
+	@echo "  make test-integration - Run integration tests only"
 	@echo ""
 	@echo "Build & Push:"
 	@echo "  make login      - Login to GitHub Container Registry"
@@ -128,6 +139,30 @@ monitor:
 monitor-stop:
 	@echo "Stopping monitoring stack..."
 	@cd monitoring && docker compose down
+
+# ==========================================
+# Venv and tests (use existing .venv if present)
+# ==========================================
+
+venv:
+	@echo "Creating virtual environment at $(VENV)..."
+	python3 -m venv $(VENV)
+	@echo "Installing requirements..."
+	$(PIP) install -q -r requirements.txt
+	@echo "Done. Activate with: source $(VENV)/bin/activate"
+
+# Use existing .venv; create only if missing
+ensure-venv:
+	@test -d $(VENV) || $(MAKE) venv
+
+test: ensure-venv
+	$(PYTEST) -v
+
+test-unit: ensure-venv
+	$(PYTEST) tests/unit/ -v
+
+test-integration: ensure-venv
+	$(PYTEST) tests/integration/ -v
 
 # ==========================================
 # Utilities

@@ -1,0 +1,93 @@
+---
+# Diagnose why tasks are stuck (1069 done, no processing): DB, worker, beat, Celery queue
+- name: Diagnose stuck tasks
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: DB state - recordings by status and sample rows
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== RECORDINGS BY STATUS ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;" 2>$null
+          Write-Output ""
+          Write-Output "=== QUEUED RECORDINGS (first 15: id, file_name, created_at) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, file_name, created_at FROM recordings WHERE status = 'queued' ORDER BY created_at LIMIT 15;" 2>$null
+          Write-Output ""
+          Write-Output "=== PROCESSING RECORDINGS ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, file_name, retry_count, updated_at, NOW() - updated_at as age FROM recordings WHERE status = 'processing';" 2>$null
+          Write-Output ""
+          Write-Output "=== FAILED RECORDINGS (last 10, full error_message) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, file_name, retry_count, error_message, updated_at FROM recordings WHERE status = 'failed' ORDER BY updated_at DESC LIMIT 10;" 2>$null
+          Write-Output ""
+          Write-Output "=== RECENT RECORDINGS UPDATED (any status, last 5) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, status, retry_count, updated_at FROM recordings ORDER BY updated_at DESC LIMIT 5;" 2>$null
+      register: db_state
+
+    - name: Worker logs - last 80 lines and errors
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== WORKER LOGS (last 80 lines) ==="
+          docker logs whisper-worker --tail=80 2>&1
+          Write-Output ""
+          Write-Output "=== WORKER LOGS CONTAINING ERROR/FAIL/Exception (last 200 lines) ==="
+          docker logs whisper-worker --tail=200 2>&1 | Select-String -Pattern "ERROR|FAIL|Exception|Traceback|Error" -Context 0,1
+      register: worker_logs
+
+    - name: Beat logs - enqueue task and recent activity
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== BEAT LOGS (last 30 lines) ==="
+          docker logs whisper-beat --tail=30 2>&1
+      register: beat_logs
+
+    - name: Redis and Celery queue state
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== REDIS CELERY QUEUE LENGTH ==="
+          docker exec whisper-redis redis-cli LLEN celery 2>$null
+          Write-Output ""
+          Write-Output "=== API QUEUE STATUS ==="
+          try {
+            $q = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/queue/status" -TimeoutSec 5
+            Write-Output "  queued: $($q.queued), processing: $($q.processing), active_tasks: $($q.active_tasks), can_accept_more: $($q.can_accept_more)"
+          } catch {
+            Write-Output "  API queue status failed: $_"
+          }
+      register: queue_state
+
+    - name: Flower tasks (failed / recent) if available
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== FLOWER TASK COUNTS (from /api/tasks) ==="
+          try {
+            $auth = $env:FLOWER_AUTH; if (-not $auth) { $auth = "admin:admin" }
+            $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($auth))
+            $h = @{ Authorization = "Basic $b64" }
+            $r = Invoke-RestMethod -Uri "http://localhost:5555/api/tasks?limit=5" -Headers $h -TimeoutSec 5
+            $r | ConvertTo-Json -Depth 3
+          } catch {
+            Write-Output "  Flower API failed: $_"
+          }
+      register: flower_tasks
+      ignore_errors: true
+
+    - name: Display DB state
+      ansible.builtin.debug:
+        msg: "{{ db_state.output }}"
+
+    - name: Display worker logs
+      ansible.builtin.debug:
+        msg: "{{ worker_logs.output }}"
+
+    - name: Display beat logs
+      ansible.builtin.debug:
+        msg: "{{ beat_logs.output }}"
+
+    - name: Display queue state
+      ansible.builtin.debug:
+        msg: "{{ queue_state.output }}"
+
+    - name: Display Flower (if any)
+      ansible.builtin.debug:
+        msg: "{{ flower_tasks.output }}"

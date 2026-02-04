@@ -1,0 +1,58 @@
+---
+# Check e002b2e3 (transcript/enrichment), finish or reset; check worker for errors
+- name: Fix e002b2e3 and check Celery errors
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: Query e002b2e3 and transcript/enrichment
+      ansible.windows.win_powershell:
+        script: |
+          $id = 'e002b2e3-6c8f-4bb7-87ea-1ac0e6334e29'
+          Write-Output "=== Recording e002b2e3 ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, status, retry_count, error_message, duration_sec, updated_at FROM recordings WHERE id = '$id';" 2>$null
+          Write-Output ""
+          Write-Output "=== Transcript for e002b2e3? ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT recording_id, LENGTH(segments_json) as seg_len, model_name FROM transcripts WHERE recording_id = '$id';" 2>$null
+          Write-Output ""
+          Write-Output "=== Enrichment for e002b2e3? ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT recording_id, segment_count FROM enrichments WHERE recording_id = '$id';" 2>$null
+      register: query_result
+
+    - name: Show query result
+      ansible.builtin.debug:
+        msg: "{{ query_result.output }}"
+
+    - name: If transcript exists - mark e002b2e3 DONE and set processed_at
+      ansible.windows.win_powershell:
+        script: |
+          $id = 'e002b2e3-6c8f-4bb7-87ea-1ac0e6334e29'
+          $hasTx = docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT 1 FROM transcripts WHERE recording_id = '$id' LIMIT 1;" 2>$null
+          if ($hasTx -match '1') {
+            Write-Output "Transcript exists - marking recording DONE"
+            docker exec whisper-postgres psql -U whisper -d whisper -c "UPDATE recordings SET status = 'done', error_message = NULL, processed_at = COALESCE(processed_at, NOW()), updated_at = NOW() WHERE id = '$id';" 2>$null
+            docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, status, processed_at FROM recordings WHERE id = '$id';" 2>$null
+          } else {
+            Write-Output "No transcript - resetting to queued for retry"
+            docker exec whisper-postgres psql -U whisper -d whisper -c "UPDATE recordings SET status = 'queued', error_message = NULL, updated_at = NOW() WHERE id = '$id';" 2>$null
+            docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, status FROM recordings WHERE id = '$id';" 2>$null
+          }
+      register: fix
+
+    - name: Show fix result
+      ansible.builtin.debug:
+        msg: "{{ fix.output }}"
+
+    - name: Worker logs - errors and e002b2e3
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== Worker last 150 lines (errors and e002b2e3) ==="
+          docker logs whisper-worker --tail=150 2>&1 | Select-String -Pattern "ERROR|FAIL|Exception|Traceback|Retry|e002b2e3" -Context 0,0
+          Write-Output ""
+          Write-Output "=== Worker last 30 lines raw ==="
+          docker logs whisper-worker --tail=30 2>&1
+      register: worker_errors
+
+    - name: Show worker errors
+      ansible.builtin.debug:
+        msg: "{{ worker_errors.output }}"

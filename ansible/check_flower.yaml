@@ -1,0 +1,27 @@
+---
+- name: Check Flower status on Windows
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: Flower container and metrics
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== Flower container ==="
+          docker ps --filter name=whisper-flower
+          Write-Output ""
+          Write-Output "=== Flower /metrics (first 5 lines) ==="
+          try {
+            $r = Invoke-WebRequest -Uri http://localhost:5555/metrics -UseBasicParsing -TimeoutSec 5
+            $r.Content.Split("`n")[0..4]
+          } catch {
+            Write-Output "Request failed: $_"
+          }
+          Write-Output ""
+          Write-Output "=== Flower logs (last 20 lines) ==="
+          docker logs whisper-flower --tail=20 2>&1
+      register: out
+
+    - name: Show result
+      ansible.builtin.debug:
+        msg: "{{ out.output }}"

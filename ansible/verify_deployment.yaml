@@ -1,0 +1,50 @@
+---
+# Verify that the new code is deployed: worker config, beat schedule, API healthcheck
+- name: Verify deployed code on Windows
+  hosts: windows
+  gather_facts: no
+
+  vars:
+    win_app_dir: "C:\\app"
+
+  tasks:
+    - name: Verify worker code (task_acks_late, beat_schedule)
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== WORKER CONFIG (deployed image) ==="
+          docker exec whisper-worker python -c "from app.worker.celery_app import celery_app; print('task_acks_late:', celery_app.conf.task_acks_late); print('beat_schedule:', list(celery_app.conf.beat_schedule.keys()))" 2>&1
+      register: worker_verify
+
+    - name: Verify API healthcheck in compose (Python-based, no curl)
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== API HEALTHCHECK (docker-compose on server) ==="
+          $content = Get-Content "{{ win_app_dir }}\docker-compose.yml" -Raw
+          if ($content -match 'urllib\.request') {
+            Write-Output "OK: healthcheck uses Python urllib (new)"
+          } elseif ($content -match 'curl.*health') {
+            Write-Output "OLD: healthcheck still uses curl"
+          } else {
+            Write-Output "Unknown healthcheck format"
+          }
+      register: healthcheck_verify
+
+    - name: Redis queue length (no duplicate explosion)
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== REDIS QUEUE (celery) ==="
+          $len = docker exec whisper-redis redis-cli LLEN celery 2>$null
+          Write-Output "celery list length: $len"
+      register: redis_verify
+
+    - name: Display worker verification
+      ansible.builtin.debug:
+        msg: "{{ worker_verify.output }}"
+
+    - name: Display healthcheck verification
+      ansible.builtin.debug:
+        msg: "{{ healthcheck_verify.output }}"
+
+    - name: Display Redis queue
+      ansible.builtin.debug:
+        msg: "{{ redis_verify.output }}"

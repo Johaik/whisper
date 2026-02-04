@@ -197,9 +197,7 @@ class TestReprocessRecording:
 
     @pytest.mark.asyncio
     async def test_reprocess_queues_task(self, async_client, auth_headers, async_session):
-        """Test that reprocess queues a new task."""
-        from unittest.mock import patch
-
+        """Test that reprocess sets status to QUEUED (periodic enqueue_pending_recordings will enqueue)."""
         recording = Recording(
             file_path="/data/calls/reprocess_test.m4a",
             file_name="reprocess_test.m4a",
@@ -212,18 +210,16 @@ class TestReprocessRecording:
         await async_session.commit()
         await async_session.refresh(recording)
 
-        with patch("app.api.routes.process_recording.delay") as mock_task:
-            response = await async_client.post(
-                f"/api/v1/recordings/{recording.id}/reprocess",
-                headers=auth_headers,
-            )
+        response = await async_client.post(
+            f"/api/v1/recordings/{recording.id}/reprocess",
+            headers=auth_headers,
+        )
 
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "queued"
-        mock_task.assert_called_once_with(str(recording.id))
 
-        # Verify status was reset
+        # Verify status was reset; periodic task will enqueue
         await async_session.refresh(recording)
         assert recording.status == RecordingStatus.QUEUED
         assert recording.error_message is None

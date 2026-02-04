@@ -29,7 +29,6 @@ from app.config import Settings, get_settings
 from app.db.models import Enrichment, Recording, RecordingStatus, Transcript
 from app.db.session import get_async_session
 from app.processors.metadata import compute_file_hash
-from app.worker.tasks import process_recording
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +183,6 @@ async def ingest_folder(
                     existing.error_message = None
                     existing.retry_count = 0
                     await session.commit()
-                    process_recording.delay(str(existing.id))
                     queued += 1
                 else:
                     skipped += 1
@@ -202,7 +200,6 @@ async def ingest_folder(
                 await session.refresh(recording)
 
                 discovered += 1
-                process_recording.delay(str(recording.id))
                 queued += 1
 
         except Exception as e:
@@ -335,9 +332,7 @@ async def reprocess_recording(
     recording.retry_count = 0
     await session.commit()
 
-    # Queue the task
-    process_recording.delay(str(recording.id))
-
+    # Periodic enqueue_pending_recordings will enqueue this (status=QUEUED)
     logger.info(f"Reprocessing queued for: {recording_id}")
 
     return ReprocessResponse(

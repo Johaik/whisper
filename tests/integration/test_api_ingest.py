@@ -2,7 +2,6 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -25,12 +24,11 @@ class TestIngestEndpoint:
     @pytest.mark.asyncio
     async def test_ingest_with_valid_token(self, async_client, auth_headers, fixtures_dir):
         """Test ingest with valid authentication."""
-        with patch("app.api.routes.process_recording.delay"):
-            response = await async_client.post(
-                "/api/v1/ingest",
-                json={"folder": str(fixtures_dir)},
-                headers=auth_headers,
-            )
+        response = await async_client.post(
+            "/api/v1/ingest",
+            json={"folder": str(fixtures_dir)},
+            headers=auth_headers,
+        )
         assert response.status_code == 200
 
     @pytest.mark.asyncio
@@ -54,18 +52,16 @@ class TestIngestEndpoint:
             Path(tmpdir, "test2.wav").write_bytes(b"fake audio 2")
             Path(tmpdir, "not_audio.txt").write_bytes(b"text file")
 
-            with patch("app.api.routes.process_recording.delay") as mock_task:
-                response = await async_client.post(
-                    "/api/v1/ingest",
-                    json={"folder": tmpdir},
-                    headers=auth_headers,
-                )
+            response = await async_client.post(
+                "/api/v1/ingest",
+                json={"folder": tmpdir},
+                headers=auth_headers,
+            )
 
             assert response.status_code == 200
             data = response.json()
             assert data["discovered"] == 2  # Only audio files
             assert data["queued"] == 2
-            assert mock_task.call_count == 2
 
     @pytest.mark.asyncio
     async def test_ingest_skips_already_processed(self, async_client, auth_headers, async_session):
@@ -76,26 +72,23 @@ class TestIngestEndpoint:
             test_file.write_bytes(b"fake audio content")
 
             # First ingest
-            with patch("app.api.routes.process_recording.delay"):
-                response1 = await async_client.post(
-                    "/api/v1/ingest",
-                    json={"folder": tmpdir},
-                    headers=auth_headers,
-                )
+            response1 = await async_client.post(
+                "/api/v1/ingest",
+                json={"folder": tmpdir},
+                headers=auth_headers,
+            )
 
             assert response1.json()["discovered"] == 1
 
             # Second ingest (should skip)
-            with patch("app.api.routes.process_recording.delay") as mock_task:
-                response2 = await async_client.post(
-                    "/api/v1/ingest",
-                    json={"folder": tmpdir},
-                    headers=auth_headers,
-                )
+            response2 = await async_client.post(
+                "/api/v1/ingest",
+                json={"folder": tmpdir},
+                headers=auth_headers,
+            )
 
             assert response2.json()["discovered"] == 0
             assert response2.json()["skipped"] == 1
-            assert mock_task.call_count == 0
 
     @pytest.mark.asyncio
     async def test_ingest_reprocesses_failed(self, async_client, auth_headers, async_session):
@@ -105,12 +98,11 @@ class TestIngestEndpoint:
             test_file.write_bytes(b"fake audio")
 
             # First ingest
-            with patch("app.api.routes.process_recording.delay"):
-                await async_client.post(
-                    "/api/v1/ingest",
-                    json={"folder": tmpdir},
-                    headers=auth_headers,
-                )
+            await async_client.post(
+                "/api/v1/ingest",
+                json={"folder": tmpdir},
+                headers=auth_headers,
+            )
 
             # Mark as failed
             result = await async_session.execute(select(Recording))
@@ -118,16 +110,14 @@ class TestIngestEndpoint:
             recording.status = RecordingStatus.FAILED
             await async_session.commit()
 
-            # Re-ingest should requeue
-            with patch("app.api.routes.process_recording.delay") as mock_task:
-                response = await async_client.post(
-                    "/api/v1/ingest",
-                    json={"folder": tmpdir},
-                    headers=auth_headers,
-                )
+            # Re-ingest should requeue (status=QUEUED; periodic task will enqueue)
+            response = await async_client.post(
+                "/api/v1/ingest",
+                json={"folder": tmpdir},
+                headers=auth_headers,
+            )
 
             assert response.json()["queued"] == 1
-            assert mock_task.call_count == 1
 
     @pytest.mark.asyncio
     async def test_ingest_force_reprocess(self, async_client, auth_headers, async_session):
@@ -137,12 +127,11 @@ class TestIngestEndpoint:
             test_file.write_bytes(b"fake audio")
 
             # First ingest
-            with patch("app.api.routes.process_recording.delay"):
-                await async_client.post(
-                    "/api/v1/ingest",
-                    json={"folder": tmpdir},
-                    headers=auth_headers,
-                )
+            await async_client.post(
+                "/api/v1/ingest",
+                json={"folder": tmpdir},
+                headers=auth_headers,
+            )
 
             # Mark as done
             result = await async_session.execute(select(Recording))
@@ -150,14 +139,12 @@ class TestIngestEndpoint:
             recording.status = RecordingStatus.DONE
             await async_session.commit()
 
-            # Force reprocess
-            with patch("app.api.routes.process_recording.delay") as mock_task:
-                response = await async_client.post(
-                    "/api/v1/ingest",
-                    json={"folder": tmpdir, "force_reprocess": True},
-                    headers=auth_headers,
-                )
+            # Force reprocess (status=QUEUED; periodic task will enqueue)
+            response = await async_client.post(
+                "/api/v1/ingest",
+                json={"folder": tmpdir, "force_reprocess": True},
+                headers=auth_headers,
+            )
 
             assert response.json()["queued"] == 1
-            assert mock_task.call_count == 1
 

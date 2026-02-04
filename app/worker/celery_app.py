@@ -25,8 +25,8 @@ _conf: dict = {
     # Worker settings - sequential processing (1 task at a time)
     "worker_concurrency": settings.worker_concurrency,
     "worker_prefetch_multiplier": 1,
-    # Task execution settings
-    "task_acks_late": True,
+    # Task execution settings (ack on receive so broker does not redeliver on worker kill)
+    "task_acks_late": False,
     "task_reject_on_worker_lost": True,
     # Retry settings
     "task_default_retry_delay": 60,
@@ -45,11 +45,11 @@ if settings.task_timeout_seconds and settings.task_timeout_seconds > 0:
     _conf["task_soft_time_limit"] = settings.task_timeout_seconds - 60
 celery_app.conf.update(_conf)
 
-# Periodic cleanup of stuck recordings (run worker with --beat or run celery beat)
+# Single periodic task: stuck recovery + enqueue QUEUED (DB-driven; only place that enqueues process_recording)
 celery_app.conf.beat_schedule = {
-    "cleanup-stuck-recordings": {
-        "task": "cleanup_stuck_recordings",
-        "schedule": crontab(minute="*/15"),  # every 15 minutes
+    "enqueue-pending-recordings": {
+        "task": "enqueue_pending_recordings",
+        "schedule": crontab(minute="*/2"),  # every 2 minutes
     },
 }
 

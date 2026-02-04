@@ -213,7 +213,7 @@ A **call** here is a recording being processed (from `Calls/`). If a recording s
 
 - The worker updates `recordings.updated_at` every **heartbeat** (default every 2 minutes) while it’s working.
 - If `updated_at` is **recent** (e.g. within the last few minutes), the job is still running (e.g. long transcription or diarization).
-- If `updated_at` is **old** (e.g. older than `stuck_processing_threshold_sec`, default 15 minutes), the recording is treated as **stuck** (no heartbeat). The next run of the task (or the periodic `cleanup_stuck_recordings` beat task) will reset it to `queued` or mark `failed` after max retries.
+- If `updated_at` is **old** (e.g. older than `stuck_processing_threshold_sec`, default 15 minutes), the recording is treated as **stuck** (no heartbeat). The next run of the periodic `enqueue_pending_recordings` beat task will reset it to `queued` or mark `failed` after max retries.
 
 **2. See which recordings are “processing” and how old they are**
 
@@ -274,7 +274,7 @@ If the worker process is unresponsive (e.g. deadlock), restart it:
 ansible windows -i inventory.ini -m ansible.windows.win_powershell -a 'script="cd C:\\app; docker compose restart worker"'
 ```
 
-After restart, recordings left in `processing` will be detected as stuck (once `updated_at` is older than `stuck_processing_threshold_sec`) and either reset to `queued` by the next task run or by the periodic `cleanup_stuck_recordings` (every 15 minutes).
+After restart, recordings left in `processing` will be detected as stuck (once `updated_at` is older than `stuck_processing_threshold_sec`) and either reset to `queued` by the next run of the periodic `enqueue_pending_recordings` task (every 2 minutes).
 
 ---
 

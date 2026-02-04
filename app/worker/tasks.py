@@ -52,10 +52,6 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 
     session = get_sync_session()
 
-    # Stuck = no progress (no heartbeat) for this long. Timeout is optional; long processes are allowed.
-    stuck_threshold_sec = settings.stuck_processing_threshold_sec
-    stuck_threshold = timedelta(seconds=stuck_threshold_sec)
-
     try:
         # Get the recording
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
@@ -77,27 +73,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             session.commit()
             return {"status": "failed", "recording_id": recording_id, "error": "Max retries exceeded"}
 
-        # 2) Detect stuck: still "processing" but updated_at is old (previous run was killed, handler never ran)
-        if recording.status == RecordingStatus.PROCESSING and recording.updated_at:
-            updated_naive = recording.updated_at.replace(tzinfo=None) if getattr(recording.updated_at, "tzinfo", None) else recording.updated_at
-            cutoff = datetime.utcnow() - stuck_threshold
-            if updated_naive < cutoff:
-                retry_count = (recording.retry_count or 0) + 1
-                recording.retry_count = retry_count
-                if retry_count >= settings.task_max_retries:
-                    logger.error(f"Recording {recording_id} stuck in processing, max retries ({settings.task_max_retries}) exceeded, marking failed")
-                    recording.status = RecordingStatus.FAILED
-                    recording.error_message = "Stuck/timeout after max retries (worker killed)"
-                    session.commit()
-                    return {"status": "failed", "recording_id": recording_id, "error": "Stuck after max retries"}
-                logger.warning(f"Recording {recording_id} stuck in processing (retry {retry_count}/{settings.task_max_retries}), resetting to queued")
-                recording.status = RecordingStatus.QUEUED
-                recording.error_message = None
-                session.commit()
-                # Trigger Celery retry with backoff; next run will see status=queued and process
-                raise self.retry(countdown=min(60 * retry_count, 600))
-
-        # Update status to processing
+        # 2) Ensure PROCESSING and retry_count (enqueue_pending_recordings sets PROCESSING before .delay; no-op if already set)
         recording.status = RecordingStatus.PROCESSING
         recording.retry_count = self.request.retries
         session.commit()
@@ -390,21 +366,30 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             return {"status": "failed", "recording_id": recording_id, "error": str(e)}
 
     finally:
-        session.close()
+        try:
+            session.close()
+        except Exception as e:
+            logger.debug(f"Session close (non-fatal): {e}")
+            # Do not re-raise: a successful return must not be turned into a retry
+            # by an exception in finally (autoretry_for would then retry the task).
 
 
-@celery_app.task(name="cleanup_stuck_recordings")
-def cleanup_stuck_recordings() -> dict[str, Any]:
-    """Find recordings stuck in 'processing' (e.g. after worker hard timeout) and mark failed or queued.
+# Max recordings to enqueue per run of enqueue_pending_recordings
+ENQUEUE_BATCH_SIZE = 50
 
-    Uses DB retry_count; after max retries marks as failed. Run periodically (e.g. Celery Beat every 15 min).
+
+@celery_app.task(name="enqueue_pending_recordings")
+def enqueue_pending_recordings() -> dict[str, Any]:
+    """Single enqueuer: reset stuck PROCESSING to QUEUED (or FAILED), then enqueue QUEUED.
+
+    DB is the source of truth. Only this task calls process_recording.delay().
+    Run periodically (e.g. Celery Beat every 1–2 min).
     """
     session = get_sync_session()
     stuck_threshold_sec = settings.stuck_processing_threshold_sec
     cutoff = datetime.utcnow() - timedelta(seconds=stuck_threshold_sec)
     try:
-        # Process in a way that works with both timezone-aware and naive updated_at
-        # Fetch processing recordings and filter in Python for updated_at < cutoff
+        # 1) Stuck recovery: PROCESSING with updated_at too old -> QUEUED or FAILED
         stuck = (
             session.query(Recording)
             .filter(Recording.status == RecordingStatus.PROCESSING)
@@ -428,11 +413,29 @@ def cleanup_stuck_recordings() -> dict[str, Any]:
                 queued_count += 1
         session.commit()
         if failed_count or queued_count:
-            logger.info(f"cleanup_stuck_recordings: failed={failed_count}, reset_to_queued={queued_count}")
-        return {"failed": failed_count, "reset_to_queued": queued_count}
+            logger.info(f"enqueue_pending_recordings: stuck->failed={failed_count}, stuck->queued={queued_count}")
+
+        # 2) Enqueue: QUEUED -> set PROCESSING, then .delay() once per recording
+        to_enqueue = (
+            session.query(Recording)
+            .filter(Recording.status == RecordingStatus.QUEUED)
+            .order_by(Recording.updated_at.asc())
+            .limit(ENQUEUE_BATCH_SIZE)
+            .all()
+        )
+        enqueued = 0
+        for rec in to_enqueue:
+            rec.status = RecordingStatus.PROCESSING
+            session.commit()
+            process_recording.delay(str(rec.id))
+            enqueued += 1
+        if enqueued:
+            logger.info(f"enqueue_pending_recordings: enqueued={enqueued}")
+
+        return {"failed": failed_count, "reset_to_queued": queued_count, "enqueued": enqueued}
     except Exception as e:
         session.rollback()
-        logger.exception(f"cleanup_stuck_recordings failed: {e}")
+        logger.exception(f"enqueue_pending_recordings failed: {e}")
         raise
     finally:
         session.close()

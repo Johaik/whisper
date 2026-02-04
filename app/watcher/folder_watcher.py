@@ -15,7 +15,6 @@ from app.config import get_settings
 from app.db.models import Recording, RecordingStatus
 from app.db.session import SyncSessionLocal
 from app.processors.metadata import compute_file_hash
-from app.worker.tasks import process_recording
 
 logging.basicConfig(
     level=logging.INFO,
@@ -266,8 +265,7 @@ class FolderWatcher:
             session.commit()
             session.refresh(recording)
 
-            # Queue for processing
-            process_recording.delay(str(recording.id))
+            # Periodic enqueue_pending_recordings will enqueue this (status=QUEUED)
             logger.info(f"Queued new file: {file_path.name} (id={recording.id})")
             return True
 

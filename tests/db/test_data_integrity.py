@@ -1,4 +1,9 @@
-"""Tests for database constraints and data integrity."""
+"""Tests for database constraints and data integrity.
+
+These tests deliberately violate constraints (unique, foreign key, not-null)
+and expect IntegrityError. When running against the test Postgres container,
+those attempts produce ERROR lines in the DB logs—this is expected and not a bug.
+"""
 
 import uuid
 from datetime import datetime

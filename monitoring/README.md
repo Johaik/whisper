@@ -98,13 +98,35 @@ monitoring/
 
 ## Troubleshooting
 
+### Flower / Celery panels show "No data" in Grafana
+
+The path is **Flower (Windows) → SSH tunnel → Prometheus (Mac) → Grafana**. If any step fails, Celery/Flower panels will be empty.
+
+1. **Tunnel must be running**  
+   Prometheus scrapes `host.docker.internal:5555`, which is your Mac’s port 5555. That port only has data when the tunnel is up:
+   ```bash
+   cd monitoring && ./tunnel.sh user@windows-server-ip
+   ```
+   Keep this terminal open.
+
+2. **Check Prometheus scrape status**  
+   Open http://localhost:9090/targets and find the **flower** job. It should be **UP**. If it’s **DOWN**:
+   - Restart the tunnel, wait 30–60 seconds, then refresh Targets.
+   - On the Mac, test Flower through the tunnel: `curl -s http://localhost:5555/metrics | head -5`
+
+3. **Check datasource in Grafana**  
+   In the dashboard, use the **Data source** dropdown (top of the page) and ensure **Prometheus** is selected. The provisioned datasource has UID `prometheus` and should be the default.
+
+4. **If Flower is UP but panels are still empty**  
+   In Prometheus (http://localhost:9090), go to Graph and run: `flower_events_total`. If no results, Flower may not be sending task events (Celery worker needs `-E` / task events enabled). Our worker images enable events by default.
+
 ### Can't connect to metrics endpoints
 
 1. Check if the SSH tunnel is still running
 2. Verify you can reach the Windows server: `ssh user@windows-server`
 3. On Windows, verify services are running: `docker ps`
 
-### No data in Grafana
+### No data in Grafana (other panels)
 
 1. Check Prometheus targets: http://localhost:9090/targets
 2. All targets should show "UP" status

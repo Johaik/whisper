@@ -249,6 +249,27 @@ Example Grafana alert rules you can add:
 2. Verify datasource configuration in Grafana
 3. Check time range - default is "Last 1 hour"
 
+**Flower/Celery panels only:** Data flows Flower (Windows) → tunnel → Prometheus → Grafana. If the SSH tunnel is not running, the `flower` target will be DOWN and Celery panels will show no data. Start the tunnel first (`make tunnel` or `monitoring/tunnel.sh`), then ensure the **flower** job is UP in http://localhost:9090/targets. In the dashboard, use the **Data source** dropdown and select **Prometheus**.
+
+### Flower: "Inspect method failed" / "Unknown worker"
+
+Flower discovers workers by sending **inspect** commands over the broker. In Docker, workers can be slow to respond, so you may see:
+
+- `Inspect method active_queues failed`, `registered failed`, `stats failed`, etc.
+- **Registered tasks** showing only built-in Celery tasks (not `process_recording` / `enqueue_pending_recordings`) if workers weren’t ready at Flower startup.
+- **404 Unknown worker 'celery@...'** when opening a worker link, because Flower never received that worker’s inspect response.
+
+The Flower container is still **working**: it’s connected to Redis and can show the `/metrics` endpoint and task events. To improve worker discovery:
+
+1. **Start Flower after the worker**  
+   `docker-compose.yml` makes Flower depend on the worker (`depends_on: worker`), so the worker starts first.
+
+2. **Give workers time to respond**  
+   `FLOWER_INSPECT_TIMEOUT=10000` (10 seconds) is set so Flower waits longer for inspect replies in Docker.
+
+After a redeploy, restart Flower so it runs inspect again once the worker is up:  
+`docker compose restart flower`. If the worker is under heavy load, inspect can still time out; the UI and `/metrics` will still work, but the Workers page may be empty or show 404 for a worker link until the next successful inspect.
+
 ### Tunnel Keeps Disconnecting
 
 Install and use `autossh` for automatic reconnection:

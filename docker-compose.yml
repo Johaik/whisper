@@ -61,7 +61,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -174,14 +174,19 @@ services:
       - "5555:5555"
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - FLOWER_PERSISTENT=true
       - FLOWER_DB=/data/flower.db
       - FLOWER_BASIC_AUTH=${FLOWER_AUTH:-admin:admin}
+      # Give workers time to respond to inspect in Docker (default 1s often too short)
+      - FLOWER_INSPECT_TIMEOUT=20000
     volumes:
       - flower_data:/data
     depends_on:
       redis:
         condition: service_healthy
+      worker:
+        condition: service_started
 
   # PostgreSQL metrics exporter for Prometheus
   postgres-exporter:

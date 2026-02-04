@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.db.models import RecordingStatus
 from app.watcher.folder_watcher import FolderWatcher
 
 
@@ -171,16 +172,14 @@ class TestProcessFile:
     """Tests for file processing."""
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
-    @patch("app.watcher.folder_watcher.process_recording")
     @patch("app.watcher.folder_watcher.compute_file_hash")
     def test_creates_record_for_new_file(
         self,
         mock_hash: MagicMock,
-        mock_task: MagicMock,
         mock_session_class: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """New file creates DB record."""
+        """New file creates DB record with QUEUED status (periodic enqueue_pending_recordings will enqueue)."""
         test_file = tmp_path / "test.m4a"
         test_file.write_bytes(b"test content")
 
@@ -199,48 +198,36 @@ class TestProcessFile:
         mock_session.commit.assert_called_once()
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
-    @patch("app.watcher.folder_watcher.process_recording")
     @patch("app.watcher.folder_watcher.compute_file_hash")
-    def test_queues_task_for_new_file(
+    def test_new_file_record_has_queued_status(
         self,
         mock_hash: MagicMock,
-        mock_task: MagicMock,
         mock_session_class: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """New file dispatches Celery task."""
+        """New file creates recording with status QUEUED for periodic enqueuer."""
         test_file = tmp_path / "test.m4a"
         test_file.write_bytes(b"test content")
 
         mock_hash.return_value = "abc123hash"
 
-        # Mock session with recording ID
         mock_session = MagicMock()
         mock_session.query.return_value.filter.return_value.first.return_value = None
         mock_session_class.return_value = mock_session
 
-        # Mock the recording object that gets created
-        mock_recording = MagicMock()
-        mock_recording.id = "test-uuid-123"
-
-        # Set up session.refresh to populate the mock recording
-        def refresh_side_effect(obj):
-            obj.id = "test-uuid-123"
-
-        mock_session.refresh.side_effect = refresh_side_effect
-
         watcher = FolderWatcher(folder=tmp_path)
         watcher.process_file(test_file)
 
-        mock_task.delay.assert_called_once()
+        call_args = mock_session.add.call_args
+        assert call_args is not None
+        recording = call_args[0][0]
+        assert recording.status == RecordingStatus.QUEUED
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
-    @patch("app.watcher.folder_watcher.process_recording")
     @patch("app.watcher.folder_watcher.compute_file_hash")
     def test_skips_existing_file(
         self,
         mock_hash: MagicMock,
-        mock_task: MagicMock,
         mock_session_class: MagicMock,
         tmp_path: Path,
     ) -> None:
@@ -262,7 +249,6 @@ class TestProcessFile:
 
         assert result is False
         mock_session.add.assert_not_called()
-        mock_task.delay.assert_not_called()
 
 
 class TestPollOnce:
