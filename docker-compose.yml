@@ -84,7 +84,9 @@ services:
       - COMPUTE_TYPE=float32
       - BEAM_SIZE=10
       - DIARIZATION_ENABLED=${DIARIZATION_ENABLED:-false}
+      - DIARIZATION_MAX_DURATION_SEC=${DIARIZATION_MAX_DURATION_SEC:-600}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-}
       # Google Contacts for caller name lookup
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -93,6 +95,22 @@ services:
       - ./Calls:/data/calls:ro
       - ./outputs:/data/outputs
       - model_cache:/home/whisper/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery Beat - schedules periodic tasks (e.g. cleanup stuck recordings every 15 min)
+  beat:
+    image: ghcr.io/johaik/whisper-worker:latest
+    container_name: whisper-beat
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    environment:
+      - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
+      - REDIS_URL=redis://redis:6379/0
+      - TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-}
     depends_on:
       postgres:
         condition: service_healthy

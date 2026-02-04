@@ -1,11 +1,13 @@
 """Celery task definitions for audio processing."""
 
 import logging
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from typing import Any
 
+from billiard.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
 from celery import Task
-from celery.exceptions import MaxRetriesExceededError
+from celery.exceptions import MaxRetriesExceededError, Retry
 
 from app.config import get_settings
 from app.db.models import Enrichment, Recording, RecordingStatus, Transcript
@@ -25,7 +27,9 @@ settings = get_settings()
 class ProcessingTask(Task):
     """Base task class with error handling and retry logic."""
 
+    # Auto-retry on exceptions (but timeout exceptions are handled explicitly and not re-raised)
     autoretry_for = (Exception,)
+    retry_kwargs = {"max_retries": settings.task_max_retries}
     retry_backoff = True
     retry_backoff_max = 600  # 10 minutes max backoff
     retry_jitter = True
@@ -48,6 +52,10 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 
     session = get_sync_session()
 
+    # Stuck = no progress (no heartbeat) for this long. Timeout is optional; long processes are allowed.
+    stuck_threshold_sec = settings.stuck_processing_threshold_sec
+    stuck_threshold = timedelta(seconds=stuck_threshold_sec)
+
     try:
         # Get the recording
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
@@ -55,6 +63,39 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         if not recording:
             logger.error(f"Recording not found: {recording_id}")
             return {"status": "error", "message": "Recording not found"}
+
+        # 0) Idempotency: already done (e.g. duplicate task in queue) — skip and return success
+        if recording.status == RecordingStatus.DONE:
+            logger.info(f"Recording {recording_id} already done, skipping duplicate task")
+            return {"status": "success", "recording_id": recording_id, "skipped": True}
+
+        # 1) Refuse to process if already at max retries (e.g. re-queued after failure)
+        if (recording.retry_count or 0) >= settings.task_max_retries:
+            logger.warning(f"Recording {recording_id} already at max retries ({recording.retry_count}), marking failed")
+            recording.status = RecordingStatus.FAILED
+            recording.error_message = recording.error_message or "Max retries exceeded"
+            session.commit()
+            return {"status": "failed", "recording_id": recording_id, "error": "Max retries exceeded"}
+
+        # 2) Detect stuck: still "processing" but updated_at is old (previous run was killed, handler never ran)
+        if recording.status == RecordingStatus.PROCESSING and recording.updated_at:
+            updated_naive = recording.updated_at.replace(tzinfo=None) if getattr(recording.updated_at, "tzinfo", None) else recording.updated_at
+            cutoff = datetime.utcnow() - stuck_threshold
+            if updated_naive < cutoff:
+                retry_count = (recording.retry_count or 0) + 1
+                recording.retry_count = retry_count
+                if retry_count >= settings.task_max_retries:
+                    logger.error(f"Recording {recording_id} stuck in processing, max retries ({settings.task_max_retries}) exceeded, marking failed")
+                    recording.status = RecordingStatus.FAILED
+                    recording.error_message = "Stuck/timeout after max retries (worker killed)"
+                    session.commit()
+                    return {"status": "failed", "recording_id": recording_id, "error": "Stuck after max retries"}
+                logger.warning(f"Recording {recording_id} stuck in processing (retry {retry_count}/{settings.task_max_retries}), resetting to queued")
+                recording.status = RecordingStatus.QUEUED
+                recording.error_message = None
+                session.commit()
+                # Trigger Celery retry with backoff; next run will see status=queued and process
+                raise self.retry(countdown=min(60 * retry_count, 600))
 
         # Update status to processing
         recording.status = RecordingStatus.PROCESSING
@@ -119,51 +160,78 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             logger.error(f"Metadata extraction failed: {e}")
             raise
 
-        # Step 2: Transcribe
-        logger.info("Step 2: Transcribing audio...")
-        try:
-            transcript_result = transcribe_audio(file_path)
-        except Exception as e:
-            logger.error(f"Transcription failed: {e}")
-            raise
+        # Heartbeat: update recording.updated_at periodically so "stuck" = no progress, not long runtime
+        stop_heartbeat = threading.Event()
+        heartbeat_interval = max(60, settings.heartbeat_interval_sec)
 
-        # Step 3: Diarization (optional)
-        segments = transcript_result.segments
-        diarization_enabled = settings.diarization_enabled
-        diarization_pending = False
-        diarization_skip_reason = None
-        speaker_count = 0
-
-        if diarization_enabled:
-            # Check if duration exceeds threshold - skip diarization for long recordings
-            if metadata.duration_sec and metadata.duration_sec > settings.diarization_max_duration_sec:
-                logger.info(
-                    f"Skipping diarization: duration {metadata.duration_sec:.0f}s > "
-                    f"{settings.diarization_max_duration_sec}s threshold"
-                )
-                diarization_enabled = False
-                diarization_pending = True
-                diarization_skip_reason = f"duration_exceeded:{metadata.duration_sec:.0f}s"
-            else:
-                logger.info("Step 3: Running diarization...")
+        def heartbeat_loop() -> None:
+            while True:
                 try:
-                    diarization = diarize_audio(file_path)
-                    segments = assign_speakers_to_transcript(segments, diarization)
-                    speaker_count = diarization.speaker_count
+                    hb_session = get_sync_session()
+                    try:
+                        hb_session.query(Recording).filter(Recording.id == recording_id).update(
+                            {Recording.updated_at: datetime.utcnow()},
+                            synchronize_session=False,
+                        )
+                        hb_session.commit()
+                    finally:
+                        hb_session.close()
                 except Exception as e:
-                    logger.warning(f"Diarization failed (continuing without): {e}")
-                    diarization_enabled = False
+                    logger.debug(f"Heartbeat update failed: {e}")
+                if stop_heartbeat.wait(heartbeat_interval):
+                    break
 
-        # Step 4: Compute analytics
-        logger.info("Step 4: Computing analytics...")
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
         try:
-            analytics = compute_analytics(
-                segments=segments,
-                total_duration=metadata.duration_sec,
-            )
-        except Exception as e:
-            logger.error(f"Analytics computation failed: {e}")
-            raise
+            # Step 2: Transcribe
+            logger.info("Step 2: Transcribing audio...")
+            try:
+                transcript_result = transcribe_audio(file_path)
+            except Exception as e:
+                logger.error(f"Transcription failed: {e}")
+                raise
+
+            # Step 3: Diarization (optional)
+            segments = transcript_result.segments
+            diarization_enabled = settings.diarization_enabled
+            diarization_pending = False
+            diarization_skip_reason = None
+            speaker_count = 0
+
+            if diarization_enabled:
+                # Check if duration exceeds threshold - skip diarization for long recordings
+                if metadata.duration_sec and metadata.duration_sec > settings.diarization_max_duration_sec:
+                    logger.info(
+                        f"Skipping diarization: duration {metadata.duration_sec:.0f}s > "
+                        f"{settings.diarization_max_duration_sec}s threshold"
+                    )
+                    diarization_enabled = False
+                    diarization_pending = True
+                    diarization_skip_reason = f"duration_exceeded:{metadata.duration_sec:.0f}s"
+                else:
+                    logger.info("Step 3: Running diarization...")
+                    try:
+                        diarization = diarize_audio(file_path)
+                        segments = assign_speakers_to_transcript(segments, diarization)
+                        speaker_count = diarization.speaker_count
+                    except Exception as e:
+                        logger.warning(f"Diarization failed (continuing without): {e}")
+                        diarization_enabled = False
+
+            # Step 4: Compute analytics
+            logger.info("Step 4: Computing analytics...")
+            try:
+                analytics = compute_analytics(
+                    segments=segments,
+                    total_duration=metadata.duration_sec,
+                )
+            except Exception as e:
+                logger.error(f"Analytics computation failed: {e}")
+                raise
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=5)
 
         # Step 5: Store results
         logger.info("Step 5: Storing results...")
@@ -258,6 +326,34 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             "duration_sec": metadata.duration_sec,
         }
 
+    except (SoftTimeLimitExceeded, TimeLimitExceeded) as e:
+        logger.error(f"Timeout exceeded for {recording_id}: {e}")
+        
+        # Update recording status based on retry count
+        recording = session.query(Recording).filter(Recording.id == recording_id).first()
+        if recording:
+            retry_count = self.request.retries
+            recording.retry_count = retry_count
+            recording.error_message = f"Timeout exceeded: {e}"
+            
+            # If we've exceeded max retries, mark as failed
+            if retry_count >= settings.task_max_retries:
+                logger.error(f"Max retries ({settings.task_max_retries}) exceeded for {recording_id} due to timeout")
+                recording.status = RecordingStatus.FAILED
+                recording.error_message = f"Timeout exceeded after {retry_count} retries: {e}"
+                session.commit()
+                # Don't re-raise - mark as failed and stop
+                return {"status": "failed", "recording_id": recording_id, "error": "Timeout exceeded after max retries"}
+            else:
+                # Reset to queued for retry
+                logger.warning(f"Resetting {recording_id} to queued for retry {retry_count + 1}/{settings.task_max_retries}")
+                recording.status = RecordingStatus.QUEUED
+                session.commit()
+                # Re-raise to trigger Celery retry
+                raise
+
+    except Retry:
+        raise  # Celery retry (e.g. stuck reset to queued) - let it through
     except MaxRetriesExceededError:
         logger.error(f"Max retries exceeded for: {recording_id}")
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
@@ -273,12 +369,71 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         # Update recording with error
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
         if recording:
+            retry_count = self.request.retries
+            recording.retry_count = retry_count
             recording.error_message = str(e)
+            
+            # If we've exceeded max retries, mark as failed
+            if retry_count >= settings.task_max_retries:
+                logger.error(f"Max retries ({settings.task_max_retries}) exceeded for {recording_id}")
+                recording.status = RecordingStatus.FAILED
+            else:
+                # Reset to queued for retry
+                recording.status = RecordingStatus.QUEUED
             session.commit()
 
-        # Re-raise for retry
-        raise
+        # Re-raise for retry (only if not at max retries)
+        if self.request.retries < settings.task_max_retries:
+            raise
+        else:
+            # Max retries reached, don't re-raise
+            return {"status": "failed", "recording_id": recording_id, "error": str(e)}
 
+    finally:
+        session.close()
+
+
+@celery_app.task(name="cleanup_stuck_recordings")
+def cleanup_stuck_recordings() -> dict[str, Any]:
+    """Find recordings stuck in 'processing' (e.g. after worker hard timeout) and mark failed or queued.
+
+    Uses DB retry_count; after max retries marks as failed. Run periodically (e.g. Celery Beat every 15 min).
+    """
+    session = get_sync_session()
+    stuck_threshold_sec = settings.stuck_processing_threshold_sec
+    cutoff = datetime.utcnow() - timedelta(seconds=stuck_threshold_sec)
+    try:
+        # Process in a way that works with both timezone-aware and naive updated_at
+        # Fetch processing recordings and filter in Python for updated_at < cutoff
+        stuck = (
+            session.query(Recording)
+            .filter(Recording.status == RecordingStatus.PROCESSING)
+            .all()
+        )
+        failed_count = 0
+        queued_count = 0
+        for rec in stuck:
+            updated_naive = rec.updated_at.replace(tzinfo=None) if getattr(rec.updated_at, "tzinfo", None) else rec.updated_at
+            if updated_naive is None or updated_naive >= cutoff:
+                continue
+            retry_count = (rec.retry_count or 0) + 1
+            rec.retry_count = retry_count
+            if retry_count >= settings.task_max_retries:
+                rec.status = RecordingStatus.FAILED
+                rec.error_message = "Stuck/timeout after max retries (cleanup)"
+                failed_count += 1
+            else:
+                rec.status = RecordingStatus.QUEUED
+                rec.error_message = None
+                queued_count += 1
+        session.commit()
+        if failed_count or queued_count:
+            logger.info(f"cleanup_stuck_recordings: failed={failed_count}, reset_to_queued={queued_count}")
+        return {"failed": failed_count, "reset_to_queued": queued_count}
+    except Exception as e:
+        session.rollback()
+        logger.exception(f"cleanup_stuck_recordings failed: {e}")
+        raise
     finally:
         session.close()
 

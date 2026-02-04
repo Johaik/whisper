@@ -1,8 +1,9 @@
 """Application configuration using pydantic settings."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,8 +47,24 @@ class Settings(BaseSettings):
 
     # Worker settings
     worker_concurrency: int = 1
-    task_timeout_seconds: int = 1800  # 30 minutes
+    # Task time limit (seconds). None or 0 = no limit (long processes allowed). Stuck = no heartbeat, not timeout.
+    task_timeout_seconds: int | None = None
     task_max_retries: int = 3
+    # Stuck = no progress (no heartbeat) for this many seconds. Default 15 min.
+    stuck_processing_threshold_sec: int = 900
+    # Heartbeat interval: update recording.updated_at every N sec while processing so we detect stuck vs slow.
+    heartbeat_interval_sec: int = 120
+
+    @field_validator("task_timeout_seconds", mode="before")
+    @classmethod
+    def coerce_task_timeout(cls, v: Any) -> int | None:
+        """Coerce empty or 0 to None = no task time limit (long processes allowed)."""
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        n = int(v) if isinstance(v, str) else v
+        return None if n == 0 else n
 
     # Audio file extensions to process
     audio_extensions: tuple[str, ...] = (".m4a", ".mp3", ".wav", ".aac", ".ogg", ".flac")

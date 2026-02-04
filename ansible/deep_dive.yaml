@@ -1,0 +1,66 @@
+---
+# Deep-dive deployment check: data integrity, worker/beat, schema
+- name: Deep dive deployment check
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: DB integrity and schema check
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== DB INTEGRITY ==="
+          $queries = @(
+            "SELECT 'recordings' as tbl, COUNT(*) FROM recordings",
+            "SELECT 'transcripts' as tbl, COUNT(*) FROM transcripts",
+            "SELECT 'enrichments' as tbl, COUNT(*) FROM enrichments"
+          )
+          foreach ($q in $queries) {
+            $r = docker exec whisper-postgres psql -U whisper -d whisper -t -c $q 2>$null
+            Write-Output $r.Trim()
+          }
+          Write-Output ""
+          Write-Output "=== RECORDINGS BY STATUS ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;" 2>$null
+          Write-Output ""
+          Write-Output "=== ENRICHMENTS TABLE COLUMNS (diarization_pending/skip_reason) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "\d enrichments" 2>$null | Select-String "diarization"
+          Write-Output ""
+          Write-Output "=== DONE RECORDINGS WITH TRANSCRIPT (sample 3) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT r.id, r.file_name, r.status, (SELECT COUNT(*) FROM transcripts t WHERE t.recording_id = r.id) as tx_count FROM recordings r WHERE r.status = 'done' LIMIT 3;" 2>$null
+          Write-Output ""
+          Write-Output "=== FAILED RECORDINGS (last 5) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, file_name, status, retry_count, LEFT(error_message, 60) as err FROM recordings WHERE status = 'failed' ORDER BY updated_at DESC LIMIT 5;" 2>$null
+          Write-Output ""
+          Write-Output "=== PROCESSING RECORDINGS (stuck check) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, file_name, status, retry_count, updated_at, NOW() - updated_at as age FROM recordings WHERE status = 'processing';" 2>$null
+          Write-Output ""
+          Write-Output "=== DATA CONSISTENCY (orphan check) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT 'done_without_transcript' as check_type, COUNT(*) FROM recordings r WHERE r.status = 'done' AND NOT EXISTS (SELECT 1 FROM transcripts t WHERE t.recording_id = r.id);" 2>$null
+          docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT 'transcript_orphan' as check_type, COUNT(*) FROM transcripts t WHERE NOT EXISTS (SELECT 1 FROM recordings r WHERE r.id = t.recording_id);" 2>$null
+      register: db_out
+
+    - name: Worker logs (heartbeat / stuck / errors)
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== WORKER LOGS (last 40 lines) ==="
+          docker logs whisper-worker --tail=40 2>&1
+      register: worker_out
+
+    - name: Beat logs (cleanup task)
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== BEAT LOGS (last 20 lines) ==="
+          docker logs whisper-beat --tail=20 2>&1
+      register: beat_out
+
+    - name: Show DB integrity result
+      ansible.builtin.debug:
+        msg: "{{ db_out.output }}"
+
+    - name: Show worker logs
+      ansible.builtin.debug:
+        msg: "{{ worker_out.output }}"
+
+    - name: Show beat logs
+      ansible.builtin.debug:
+        msg: "{{ beat_out.output }}"
