@@ -7,6 +7,7 @@
 - `docs/` contains deeper operational and architectural docs; `ansible/` and `monitoring/` support deployment and metrics.
 
 ## Build, Test, and Development Commands
+- **Ansible (macOS):** When running playbooks against Windows, set `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` or use `ansible/run-playbook.sh` to avoid fork-safety errors with pywinrm.
 - `docker-compose up -d` starts API, worker, watcher, and infrastructure locally.
 - `docker-compose run --rm migrate` runs Alembic migrations.
 - `uvicorn app.main:app --reload` runs the API without Docker.

@@ -415,6 +415,16 @@
           cd "{{ win_app_dir }}"
           docker compose ps
 
+    - name: Run database migrations
+      ansible.windows.win_powershell:
+        script: |
+          cd "{{ win_app_dir }}"
+          docker compose run --rm migrate
+          if ($LASTEXITCODE -ne 0) {
+            throw "Migrations failed"
+          }
+          Write-Output "Migrations completed"
+
     - name: Show deployment status
       ansible.windows.win_powershell:
         script: |

@@ -160,10 +160,24 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
         heartbeat_thread.start()
         try:
-            # Step 2: Transcribe
+            # Step 2: Transcribe (with segment progress for API and logs)
             logger.info("Step 2: Transcribing audio...")
+            recording.processing_segments_count = 0
+            session.commit()
+            logger.info("Transcription progress: 0 segments (started)")
+
+            def progress_cb(segments_count: int) -> None:
+                rec = session.query(Recording).filter(Recording.id == recording_id).first()
+                if rec:
+                    rec.processing_segments_count = segments_count
+                    if segments_count % 5 == 0 or segments_count == 1:
+                        session.commit()
+                        logger.info(
+                            f"Transcription progress: {segments_count} segment{'s' if segments_count != 1 else ''}"
+                        )
+
             try:
-                transcript_result = transcribe_audio(file_path)
+                transcript_result = transcribe_audio(file_path, progress_callback=progress_cb)
             except Exception as e:
                 logger.error(f"Transcription failed: {e}")
                 raise
@@ -208,6 +222,11 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         finally:
             stop_heartbeat.set()
             heartbeat_thread.join(timeout=5)
+            # Clear segment progress (success or failure)
+            rec = session.query(Recording).filter(Recording.id == recording_id).first()
+            if rec and rec.processing_segments_count is not None:
+                rec.processing_segments_count = None
+                session.commit()
 
         # Step 5: Store results
         logger.info("Step 5: Storing results...")
@@ -335,7 +354,8 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
         if recording:
             recording.status = RecordingStatus.FAILED
-            recording.error_message = "Max retries exceeded"
+            # Keep existing error_message (e.g. "Timeout exceeded: ...") so root cause is visible
+            recording.error_message = recording.error_message or "Max retries exceeded"
             session.commit()
         raise
 

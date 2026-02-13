@@ -175,6 +175,61 @@ class TestGetRecording:
         assert data["duration_sec"] == 120.5
         assert data["sample_rate"] == 44100
         assert data["status"] == "done"
+        assert "processing_segments_count" in data
+        assert data["processing_segments_count"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_recording_returns_processing_segments_count_when_set(
+        self, async_client, auth_headers, async_session
+    ):
+        """Test that GET recording returns processing_segments_count when in progress."""
+        recording = Recording(
+            file_path="/data/calls/progress_test.m4a",
+            file_name="progress_test.m4a",
+            file_hash="progresshash",
+            file_size=1024,
+            status=RecordingStatus.PROCESSING,
+            processing_segments_count=12,
+        )
+        async_session.add(recording)
+        await async_session.commit()
+        await async_session.refresh(recording)
+
+        response = await async_client.get(
+            f"/api/v1/recordings/{recording.id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "processing"
+        assert data["processing_segments_count"] == 12
+
+    @pytest.mark.asyncio
+    async def test_list_recordings_includes_processing_segments_count(
+        self, async_client, auth_headers, async_session
+    ):
+        """Test that list endpoint includes processing_segments_count (null when not processing)."""
+        recording = Recording(
+            file_path="/data/calls/list_progress.m4a",
+            file_name="list_progress.m4a",
+            file_hash="listprogress",
+            file_size=1024,
+            status=RecordingStatus.DONE,
+        )
+        async_session.add(recording)
+        await async_session.commit()
+
+        response = await async_client.get(
+            "/api/v1/recordings",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) >= 1
+        item = next(i for i in data["items"] if i["file_name"] == "list_progress.m4a")
+        assert "processing_segments_count" in item
+        assert item["processing_segments_count"] is None
 
 
 class TestReprocessRecording:

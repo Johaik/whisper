@@ -168,7 +168,7 @@ docker compose up -d
 
 A "Whisper Pipeline Overview" dashboard is automatically provisioned with:
 
-- **Pending Tasks** - Current queue depth
+- **Pending Tasks** - Queue depth (`received - succeeded - failed`). Clamped to ≥ 0; after Flower or worker restarts the raw value can briefly go negative (counters reset, completed tasks still reported), so the dashboard shows 0 in that case.
 - **Tasks Completed** - Total successful transcriptions
 - **Tasks Failed** - Error count
 - **Workers Online** - Active Celery workers
@@ -251,6 +251,28 @@ Example Grafana alert rules you can add:
 
 **Flower/Celery panels only:** Data flows Flower (Windows) → tunnel → Prometheus → Grafana. If the SSH tunnel is not running, the `flower` target will be DOWN and Celery panels will show no data. Start the tunnel first (`make tunnel` or `monitoring/tunnel.sh`), then ensure the **flower** job is UP in http://localhost:9090/targets. In the dashboard, use the **Data source** dropdown and select **Prometheus**.
 
+### Worker logs: segment progress
+
+To monitor transcription progress in the worker logs, tail the worker container. You’ll see segment tracking lines every few segments (1, 5, 10, 15, …):
+
+```
+Step 2: Transcribing audio...
+Transcription progress: 0 segments (started)
+Transcription progress: 1 segment
+Transcription progress: 5 segments
+Transcription progress: 10 segments
+...
+```
+
+**From Mac (Ansible):**
+
+```bash
+cd ansible && export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+ansible windows -i inventory.ini -m ansible.windows.win_powershell -a "script=\"docker logs whisper-worker --tail=100 2>&1\""
+```
+
+**From Windows (SSH or RDP):** `docker logs whisper-worker --tail=100 -f` to follow.
+
 ### Flower: "Inspect method failed" / "Unknown worker"
 
 Flower discovers workers by sending **inspect** commands over the broker. In Docker, workers can be slow to respond, so you may see:
@@ -265,10 +287,13 @@ The Flower container is still **working**: it’s connected to Redis and can sho
    `docker-compose.yml` makes Flower depend on the worker (`depends_on: worker`), so the worker starts first.
 
 2. **Give workers time to respond**  
-   `FLOWER_INSPECT_TIMEOUT=10000` (10 seconds) is set so Flower waits longer for inspect replies in Docker.
+   `FLOWER_INSPECT_TIMEOUT=60000` (60 seconds) is set so Flower waits longer for inspect replies. With a single worker, long-running transcription can block the process so it may not answer inspect in time.
+
+3. **Inspect warnings when worker is busy**  
+   If you see `Inspect method … failed` in Flower logs (e.g. `active`, `stats`, `registered`), it usually means the only worker is busy and did not reply within the timeout. Flower still works: task list, metrics, and events come from the broker. The Workers page may be empty or show 404 until the next successful inspect (e.g. when the worker finishes the task). Restarting Flower is not required.
 
 After a redeploy, restart Flower so it runs inspect again once the worker is up:  
-`docker compose restart flower`. If the worker is under heavy load, inspect can still time out; the UI and `/metrics` will still work, but the Workers page may be empty or show 404 for a worker link until the next successful inspect.
+`docker compose restart flower`.
 
 ### Tunnel Keeps Disconnecting
 

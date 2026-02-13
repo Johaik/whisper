@@ -246,15 +246,9 @@ ansible windows -i inventory.ini -m ansible.windows.win_powershell -a "script=\"
 | Step 2 | **Transcription** (Whisper) | Long files or CPU-only: can take many minutes. Main culprit for “long” runs. |
 | Step 3 | **Diarization** (pyannote) | CPU-heavy; long files (>10 min) are skipped by config, but shorter long files can still be slow. |
 
-**4. Optional: enforce a hard task timeout**
+**4. Task timeout vs heartbeat (recommendation: leave unset)**
 
-By default there is **no** Celery task time limit (`task_timeout_seconds` is unset). Only “stuck” (no heartbeat) is used. If you want to cap how long a single task can run (e.g. 1 hour), set in `C:\app\.env` (or your deploy env):
-
-```env
-TASK_TIMEOUT_SECONDS=3600
-```
-
-Redeploy or restart the worker so the new value is picked up. The worker will then apply a soft then hard time limit; the task may be retried up to `task_max_retries`.
+By default there is **no** Celery task time limit (`task_timeout_seconds` is unset). Only “stuck” (no heartbeat) is used. Heartbeat updates `recordings.updated_at` every 2 min; stuck = no update for 15 min (no hard timeout needed). Leave `TASK_TIMEOUT_SECONDS` unset or 0. For a safety cap use a high value (e.g. 7200) and restart the worker.
 
 **5. Reset a specific recording to retry**
 

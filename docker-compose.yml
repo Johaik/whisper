@@ -178,8 +178,8 @@ services:
       - FLOWER_PERSISTENT=true
       - FLOWER_DB=/data/flower.db
       - FLOWER_BASIC_AUTH=${FLOWER_AUTH:-admin:admin}
-      # Give workers time to respond to inspect in Docker (default 1s often too short)
-      - FLOWER_INSPECT_TIMEOUT=20000
+      # Give workers time to respond to inspect (single worker often busy with long transcription)
+      - FLOWER_INSPECT_TIMEOUT=60000
     volumes:
       - flower_data:/data
     depends_on:

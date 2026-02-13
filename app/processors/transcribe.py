@@ -1,6 +1,7 @@
 """Audio transcription processor using faster-whisper."""
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -79,6 +80,7 @@ def transcribe_audio(
     vad_min_silence_ms: int | None = None,
     device: str | None = None,
     compute_type: str | None = None,
+    progress_callback: Callable[[int], None] | None = None,
 ) -> TranscriptionResult:
     """Transcribe audio file using faster-whisper.
 
@@ -135,6 +137,8 @@ def transcribe_audio(
             )
         )
         texts.append(segment.text.strip())
+        if progress_callback is not None:
+            progress_callback(len(segments))
 
     full_text = " ".join(texts)
 

@@ -51,6 +51,7 @@ class RecordingListItem(RecordingBase):
     call_datetime: datetime | None = None
     created_at: datetime
     processed_at: datetime | None
+    processing_segments_count: int | None = None
 
 
 class RecordingList(BaseModel):
@@ -109,6 +110,7 @@ class RecordingDetail(RecordingBase):
     status: RecordingStatus
     error_message: str | None
     retry_count: int
+    processing_segments_count: int | None = None
     duration_sec: float | None
     sample_rate: int | None
     channels: int | None

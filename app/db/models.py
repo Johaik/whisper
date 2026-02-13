@@ -69,6 +69,8 @@ class Recording(Base):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Progress during transcription: number of segments so far (only set while status=processing)
+    processing_segments_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Audio metadata (populated by ffprobe)
     duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)

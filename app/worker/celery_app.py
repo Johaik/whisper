@@ -39,7 +39,8 @@ _conf: dict = {
     "worker_send_task_events": True,
     "task_send_sent_event": True,
 }
-# Only set time limits when task_timeout_seconds is set; otherwise no limit (stuck = no heartbeat)
+# Time limit: optional. With heartbeat, "stuck" = no progress (no heartbeat) and is handled by
+# enqueue_pending_recordings. So timeout is not required for correctness; leave unset for long files.
 if settings.task_timeout_seconds and settings.task_timeout_seconds > 0:
     _conf["task_time_limit"] = settings.task_timeout_seconds
     _conf["task_soft_time_limit"] = settings.task_timeout_seconds - 60

@@ -47,7 +47,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "(sum(flower_events_total{type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{type=\"task-failed\"}) or vector(0))",
+          "expr": "((sum(flower_events_total{type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{type=\"task-failed\"}) or vector(0)) + abs((sum(flower_events_total{type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{type=\"task-failed\"}) or vector(0)))) / 2",
           "legendFormat": "Pending"
         }
       ],

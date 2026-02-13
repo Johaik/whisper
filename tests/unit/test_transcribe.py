@@ -154,3 +154,29 @@ class TestTranscribeAudio:
         assert result.text == ""
         assert len(result.segments) == 0
 
+    @patch("app.processors.transcribe.get_or_load_model")
+    def test_transcribe_calls_progress_callback_per_segment(self, mock_get_model, mock_whisper_model):
+        """Test that progress_callback is invoked with 1, 2, ... for each segment."""
+        mock_get_model.return_value = mock_whisper_model
+        progress_counts = []
+
+        result = transcribe_audio(
+            "/path/to/audio.wav",
+            progress_callback=progress_counts.append,
+        )
+
+        assert result.language == "he"
+        assert len(result.segments) == 2
+        assert progress_counts == [1, 2]
+
+    @patch("app.processors.transcribe.get_or_load_model")
+    def test_transcribe_without_progress_callback(self, mock_get_model, mock_whisper_model):
+        """Test that transcribe_audio works when progress_callback is not passed."""
+        mock_get_model.return_value = mock_whisper_model
+
+        result = transcribe_audio("/path/to/audio.wav")
+
+        assert isinstance(result, TranscriptionResult)
+        assert len(result.segments) == 2
+        mock_whisper_model.transcribe.assert_called_once()
+

@@ -158,6 +158,7 @@ class TestProcessRecordingTask:
         assert recording.status == RecordingStatus.DONE
         assert recording.duration_sec == 60.0
         assert recording.processed_at is not None
+        assert recording.processing_segments_count is None
 
         # Verify transcript was created
         transcript = verify_session.query(Transcript).filter(
@@ -375,4 +376,68 @@ class TestProcessRecordingTask:
         ).all()
         assert len(transcripts) == 1
         assert transcripts[0].text == "טקסט מעודכן"
+        verify_session.close()
+
+    def test_process_recording_passes_progress_callback_to_transcribe(
+        self, task_session_factory, mock_processors
+    ):
+        """Test that transcribe_audio is called with a progress_callback."""
+        setup_session = task_session_factory()
+        recording = Recording(
+            id=uuid.uuid4(),
+            file_path="/data/calls/test.m4a",
+            file_name="test.m4a",
+            file_hash="progresshash",
+            file_size=768000,
+            status=RecordingStatus.QUEUED,
+        )
+        setup_session.add(recording)
+        setup_session.commit()
+        recording_id = recording.id
+        setup_session.close()
+
+        def mock_get_session():
+            return task_session_factory()
+
+        with patch("app.worker.tasks.get_sync_session", mock_get_session):
+            with patch("app.worker.tasks.get_settings") as mock_settings:
+                mock_settings.return_value = get_test_settings()
+                process_recording(str(recording_id))
+
+        mock_transcribe = mock_processors["transcribe"]
+        mock_transcribe.assert_called_once()
+        call_kwargs = mock_transcribe.call_args[1]
+        assert "progress_callback" in call_kwargs
+        assert callable(call_kwargs["progress_callback"])
+
+    def test_process_recording_clears_segment_progress_on_success(
+        self, task_session_factory, mock_processors
+    ):
+        """Test that processing_segments_count is cleared after successful processing."""
+        setup_session = task_session_factory()
+        recording = Recording(
+            id=uuid.uuid4(),
+            file_path="/data/calls/test.m4a",
+            file_name="test.m4a",
+            file_hash="clearprogresshash",
+            file_size=768000,
+            status=RecordingStatus.QUEUED,
+        )
+        setup_session.add(recording)
+        setup_session.commit()
+        recording_id = recording.id
+        setup_session.close()
+
+        def mock_get_session():
+            return task_session_factory()
+
+        with patch("app.worker.tasks.get_sync_session", mock_get_session):
+            with patch("app.worker.tasks.get_settings") as mock_settings:
+                mock_settings.return_value = get_test_settings()
+                process_recording(str(recording_id))
+
+        verify_session = task_session_factory()
+        rec = verify_session.query(Recording).filter(Recording.id == recording_id).first()
+        assert rec.status == RecordingStatus.DONE
+        assert rec.processing_segments_count is None
         verify_session.close()
