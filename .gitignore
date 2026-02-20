@@ -92,3 +92,9 @@ ansible/inventory.ini
 # Misc
 .DS_Store
 Thumbs.db
+
+# Agent & Workspace internal
+.agents/
+.cursor/
+.cursorrules
+GEMINI.md

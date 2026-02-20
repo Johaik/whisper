@@ -294,9 +294,10 @@
           # Load already copied files (by filename)
           $copied = @{}
           if (Test-Path $CopiedLog) {
-            Get-Content $CopiedLog | ForEach-Object { $copied[$_] = $true }
+            # Use -Unique to handle any existing bloat while loading
+            Get-Content $CopiedLog | Select-Object -Unique | ForEach-Object { $copied[$_] = $true }
           }
-          Log "Already copied: $($copied.Count)"
+          Log "Already copied (unique): $($copied.Count)"
           
           # Find files not yet copied
           $pending = $allFiles | Where-Object { -not $copied.ContainsKey($_.Name) }
@@ -314,10 +315,13 @@
           $copiedCount = 0
           foreach ($file in $batch) {
             try {
-              Copy-Item $file.FullName -Destination $Dest -Force
-              Add-Content $CopiedLog $file.Name
-              $copiedCount++
-              Log "  [$copiedCount/$($batch.Count)] $($file.Name)"
+              if (-not $copied.ContainsKey($file.Name)) {
+                Copy-Item $file.FullName -Destination $Dest -Force
+                Add-Content $CopiedLog $file.Name
+                $copied[$file.Name] = $true
+                $copiedCount++
+                Log "  [$copiedCount/$($batch.Count)] $($file.Name)"
+              }
             } catch {
               Log "  ERROR copying $($file.Name): $_" Red
             }

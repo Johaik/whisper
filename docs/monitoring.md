@@ -253,16 +253,18 @@ Example Grafana alert rules you can add:
 
 ### Worker logs: segment progress
 
-To monitor transcription progress in the worker logs, tail the worker container. You’ll see segment tracking lines every few segments (1, 5, 10, 15, …):
+To monitor transcription progress in the worker logs, tail the worker container. Logs include the **current pipeline step** (`step=transcribe`, etc.) and, during transcription, an **estimated %** and **elapsed time** when duration is known:
 
 ```
-Step 2: Transcribing audio...
+Step 2: Transcribing audio... (duration 28.5m)
 Transcription progress: 0 segments (started)
-Transcription progress: 1 segment
-Transcription progress: 5 segments
-Transcription progress: 10 segments
+Transcription progress: 1 segment (step=transcribe)
+Transcription progress: 5 segments (step=transcribe) (~8% estimated, elapsed 45s)
+Transcription progress: 10 segments (step=transcribe) (~15% estimated, elapsed 2m)
 ...
 ```
+
+On **failure**, the worker logs and the recording’s `error_message` in the DB include the step (and segment count when in transcribe), e.g. `Step transcribe (45 segments): Timeout exceeded: ...`.
 
 **From Mac (Ansible):**
 
@@ -272,6 +274,16 @@ ansible windows -i inventory.ini -m ansible.windows.win_powershell -a "script=\"
 ```
 
 **From Windows (SSH or RDP):** `docker logs whisper-worker --tail=100 -f` to follow.
+
+### Beat logs: stuck detection
+
+The periodic task `enqueue_pending_recordings` (Celery Beat, every 2 minutes) resets **stuck** PROCESSING recordings (no heartbeat for longer than `stuck_processing_threshold_sec`, e.g. 15 min). When it finds a stuck recording, it logs one line per job with step and segment count so you can see where it was stuck:
+
+```
+Stuck recording: id=<uuid> file=Call recording ....m4a step=transcribe segments=45 last_update=2026-02-13 14:00:00 age_sec=900
+```
+
+When a stuck recording is marked **failed** (max retries), `error_message` is set to e.g. `Stuck in step transcribe (45 segments); last update 15m ago (cleanup)`. So from the DB or API you can see both that it was stuck and in which step. To see these logs, tail the **beat** container (same image as worker, different command): `docker logs whisper-beat --tail=50 -f`.
 
 ### Flower: "Inspect method failed" / "Unknown worker"
 

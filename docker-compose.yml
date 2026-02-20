@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U whisper"]
+      test: [ "CMD-SHELL", "pg_isready -U whisper" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +28,7 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,6 +52,7 @@ services:
       - COMPUTE_TYPE=int8
       - DIARIZATION_ENABLED=${DIARIZATION_ENABLED:-false}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES="-1"
     volumes:
       - ./Calls:/data/calls:ro
       - ./outputs:/data/outputs
@@ -61,7 +62,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -91,6 +92,7 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES="-1"
     volumes:
       - ./Calls:/data/calls:ro
       - ./outputs:/data/outputs
@@ -106,7 +108,7 @@ services:
     image: ghcr.io/johaik/whisper-worker:latest
     container_name: whisper-beat
     restart: unless-stopped
-    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    command: [ "celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info" ]
     environment:
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
       - REDIS_URL=redis://redis:6379/0
@@ -143,7 +145,7 @@ services:
     container_name: whisper-migrate
     environment:
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
-    command: ["alembic", "upgrade", "head"]
+    command: [ "alembic", "upgrade", "head" ]
     depends_on:
       postgres:
         condition: service_healthy

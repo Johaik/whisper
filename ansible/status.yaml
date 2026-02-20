@@ -28,10 +28,10 @@
           Write-Output "└─────────────────────────────────────────────────────────────┘"
           try {
             $q = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/queue/status" -TimeoutSec 5
-            Write-Output "  Queued:      $($q.queued) files waiting"
-            Write-Output "  Processing:  $($q.processing) files in progress"
-            Write-Output "  Workers:     $($q.active_tasks) active"
-            Write-Output "  Accept more: $($q.can_accept_more) (threshold: $($q.threshold))"
+            Write-Output ("  Waiting (Queued) : {0}" -f $q.queued)
+            Write-Output ("  Active (Moving)  : {0}" -f $q.processing)
+            Write-Output ("  Total Pending    : {0}" -f ($q.queued + $q.processing))
+            Write-Output ("  Accept more      : {0} (threshold: {1})" -f $q.can_accept_more, $q.threshold)
           } catch {
             Write-Output "  API not available"
           }
@@ -42,21 +42,37 @@
           Write-Output "│ DATABASE RECORDINGS                                         │"
           Write-Output "└─────────────────────────────────────────────────────────────┘"
           try {
+            # Map statuses to more readable labels
+            $statusMap = @{
+              "discovered" = "Discovered"
+              "queued"     = "Queued"
+              "processing" = "Processing"
+              "done"       = "Completed"
+              "failed"     = "Failed"
+              "skipped"    = "Skipped"
+            }
+            
             $query = "SELECT status, COUNT(*) as count FROM recordings GROUP BY status ORDER BY status;"
             $result = docker exec whisper-postgres psql -U whisper -d whisper -t -c "$query" 2>$null
+            
             if ($result) {
-              $result.Trim().Split("`n") | ForEach-Object {
-                $parts = $_.Trim().Split("|")
-                if ($parts.Count -eq 2) {
-                  $status = $parts[0].Trim().PadRight(12)
+              $lines = $result.Trim().Split("`n")
+              foreach ($line in $lines) {
+                if ($line.Contains("|")) {
+                  $parts = $line.Split("|")
+                  $rawStatus = $parts[0].Trim()
                   $count = $parts[1].Trim()
-                  Write-Output "  $status : $count"
+                  $label = if ($statusMap.ContainsKey($rawStatus)) { $statusMap[$rawStatus] } else { $rawStatus }
+                  Write-Output ("  {0,-15}: {1}" -f $label, $count)
                 }
               }
+            } else {
+              Write-Output "  No recordings found in database"
             }
+            
             $total = docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT COUNT(*) FROM recordings;" 2>$null
-            Write-Output "  ─────────────────"
-            Write-Output "  Total        : $($total.Trim())"
+            Write-Output "  ───────────────────────────────"
+            Write-Output ("  Total          : {0}" -f $total.Trim())
           } catch {
             Write-Output "  Database not available"
           }
@@ -66,22 +82,29 @@
           Write-Output "┌─────────────────────────────────────────────────────────────┐"
           Write-Output "│ GOOGLE DRIVE SYNC                                           │"
           Write-Output "└─────────────────────────────────────────────────────────────┘"
-          $copiedCount = 0
+          $uniqueCopiedCount = 0
           if (Test-Path "{{ win_app_dir }}\copied-files.txt") {
-            $copiedCount = (Get-Content "{{ win_app_dir }}\copied-files.txt" | Measure-Object).Count
+            $uniqueCopiedCount = (Get-Content "{{ win_app_dir }}\copied-files.txt" | Select-Object -Unique | Measure-Object).Count
           }
           $callsCount = (Get-ChildItem "{{ win_app_dir }}\Calls" -File 2>$null | Measure-Object).Count
           
-          # Check Google Drive
           $gdriveCount = 0
           if (Test-Path "H:\My Drive\calls") {
-            $gdriveCount = (Get-ChildItem "H:\My Drive\calls" -File -Include "*.m4a","*.mp3","*.wav" -Recurse | Measure-Object).Count
+            $gdriveCount = (Get-ChildItem "H:\My Drive\calls" -File -Include "*.mp3","*.wav","*.m4a","*.ogg","*.flac","*.aac" -Recurse | Measure-Object).Count
           }
           
-          Write-Output "  Google Drive files:  $gdriveCount"
-          Write-Output "  Copied to local:     $copiedCount"
-          Write-Output "  In Calls folder:     $callsCount"
-          Write-Output "  Remaining to copy:   $($gdriveCount - $copiedCount)"
+          Write-Output ("  Source (G: Drive) : {0}" -f $gdriveCount)
+          Write-Output ("  Synced (Log)      : {0}" -f $uniqueCopiedCount)
+          Write-Output ("  Local (Calls)     : {0}" -f $callsCount)
+          
+          $remaining = $gdriveCount - $uniqueCopiedCount
+          if ($remaining -gt 0) {
+            Write-Output ("  Remaining         : {0}" -f $remaining)
+          } elseif ($gdriveCount -gt 0) {
+            Write-Output "  Status            : Fully Synced"
+          } else {
+            Write-Output "  Status            : G: drive not reachable"
+          }
           Write-Output ""
           
           # Scheduled Task Status
@@ -107,34 +130,29 @@
             $metrics = Invoke-WebRequest -Uri "http://localhost:5555/metrics" -UseBasicParsing -TimeoutSec 5
             $content = $metrics.Content
             
-            # Parse Flower metrics
             $received = 0
             $succeeded = 0
             $failed = 0
-            $started = 0
             
             $content -split "`n" | ForEach-Object {
-              if ($_ -match 'flower_events_total\{.*type="task-received".*\}\s+(\d+)') {
+              if ($_ -match 'flower_events_total\{[^}]*type="task-received"[^}]*\}\s+(\d+)') {
                 $received += [int]$matches[1]
               }
-              if ($_ -match 'flower_events_total\{.*type="task-succeeded".*\}\s+(\d+)') {
+              if ($_ -match 'flower_events_total\{[^}]*type="task-succeeded"[^}]*\}\s+(\d+)') {
                 $succeeded += [int]$matches[1]
               }
-              if ($_ -match 'flower_events_total\{.*type="task-failed".*\}\s+(\d+)') {
+              if ($_ -match 'flower_events_total\{[^}]*type="task-failed"[^}]*\}\s+(\d+)') {
                 $failed += [int]$matches[1]
-              }
-              if ($_ -match 'flower_events_total\{.*type="task-started".*\}\s+(\d+)') {
-                $started += [int]$matches[1]
               }
             }
             
-            $pending = $received - $succeeded - $failed
+            $completed = $succeeded + $failed
+            $notCompleted = $received - $completed
             
-            Write-Output "  Received:    $received tasks"
-            Write-Output "  Succeeded:   $succeeded tasks"
-            Write-Output "  Failed:      $failed tasks"
-            Write-Output "  Pending:     $pending tasks"
-            Write-Output "  In Progress: $($started - $succeeded - $failed) tasks"
+            Write-Output "  Received:   $received (cumulative)"
+            Write-Output "  Succeeded:  $succeeded (cumulative)"
+            Write-Output "  Failed:     $failed (cumulative)"
+            Write-Output "  Not done:   $notCompleted (queued + in progress; see API for active tasks)"
           } catch {
             Write-Output "  Flower metrics not available"
           }
@@ -142,12 +160,13 @@
           
           # Recent Worker Activity
           Write-Output "┌─────────────────────────────────────────────────────────────┐"
-          Write-Output "│ RECENT WORKER ACTIVITY                                      │"
+          Write-Output "│ RECENT WORKER ACTIVITY (last 15 lines)                      │"
           Write-Output "└─────────────────────────────────────────────────────────────┘"
-          docker logs whisper-worker --tail=5 2>&1 | ForEach-Object {
-            if ($_ -match "succeeded|Processing|complete") {
-              Write-Output "  $_"
-            }
+          $workerLogs = docker logs whisper-worker --tail=15 2>&1
+          if ($workerLogs) {
+            $workerLogs | ForEach-Object { Write-Output "  $_" }
+          } else {
+            Write-Output "  (no output)"
           }
           Write-Output ""
       register: status_output

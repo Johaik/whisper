@@ -206,6 +206,38 @@ class TestGetRecording:
         assert data["processing_segments_count"] == 12
 
     @pytest.mark.asyncio
+    async def test_get_recording_returns_processing_step_fields_when_set(
+        self, async_client, auth_headers, async_session
+    ):
+        """Test that GET recording returns processing_step and processing_step_started_at when in progress."""
+        from datetime import datetime
+
+        step_started = datetime.utcnow()
+        recording = Recording(
+            file_path="/data/calls/step_test.m4a",
+            file_name="step_test.m4a",
+            file_hash="stephash",
+            file_size=1024,
+            status=RecordingStatus.PROCESSING,
+            processing_segments_count=7,
+            processing_step="transcribe",
+            processing_step_started_at=step_started,
+        )
+        async_session.add(recording)
+        await async_session.commit()
+        await async_session.refresh(recording)
+
+        response = await async_client.get(
+            f"/api/v1/recordings/{recording.id}",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["processing_step"] == "transcribe"
+        assert "processing_step_started_at" in data
+        assert data["processing_segments_count"] == 7
+
+    @pytest.mark.asyncio
     async def test_list_recordings_includes_processing_segments_count(
         self, async_client, auth_headers, async_session
     ):
@@ -230,6 +262,37 @@ class TestGetRecording:
         item = next(i for i in data["items"] if i["file_name"] == "list_progress.m4a")
         assert "processing_segments_count" in item
         assert item["processing_segments_count"] is None
+
+    @pytest.mark.asyncio
+    async def test_list_recordings_includes_processing_step_fields(
+        self, async_client, auth_headers, async_session
+    ):
+        """Test that list endpoint includes processing_step and processing_step_started_at."""
+        from datetime import datetime
+
+        recording = Recording(
+            file_path="/data/calls/list_step.m4a",
+            file_name="list_step.m4a",
+            file_hash="liststephash",
+            file_size=1024,
+            status=RecordingStatus.PROCESSING,
+            processing_step="diarization",
+            processing_step_started_at=datetime.utcnow(),
+        )
+        async_session.add(recording)
+        await async_session.commit()
+
+        response = await async_client.get(
+            "/api/v1/recordings",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        item = next(i for i in data["items"] if i["file_name"] == "list_step.m4a")
+        assert "processing_step" in item
+        assert item["processing_step"] == "diarization"
+        assert "processing_step_started_at" in item
+        assert item["processing_step_started_at"] is not None
 
 
 class TestReprocessRecording:

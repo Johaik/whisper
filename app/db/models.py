@@ -71,6 +71,9 @@ class Recording(Base):
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     # Progress during transcription: number of segments so far (only set while status=processing)
     processing_segments_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Current pipeline step (only set while status=processing); e.g. parse_metadata, transcribe, diarization
+    processing_step: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    processing_step_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Audio metadata (populated by ffprobe)
     duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)

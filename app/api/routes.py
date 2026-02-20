@@ -104,21 +104,34 @@ async def queue_status(
     
     # Check active Celery tasks
     active_tasks = 0
+    active_recording_ids = set()
     try:
         from app.worker.celery_app import celery_app
         inspect = celery_app.control.inspect()
         active = inspect.active()
         if active:
-            active_tasks = sum(len(tasks) for tasks in active.values())
+            for worker_tasks in active.values():
+                for task in worker_tasks:
+                    active_tasks += 1
+                    if task.get("name") == "process_recording" and task.get("args"):
+                        try:
+                            active_recording_ids.add(str(task["args"][0]))
+                        except (IndexError, KeyError):
+                            pass
     except Exception as e:
         logger.warning(f"Could not get Celery status: {e}")
+    
+    # Adjust processing_count to reflect ACTUAL active tasks
+    # If DB says 'processing' but Celery doesn't know about it, it's effectively 'stuck' or 'queued'
+    # For reporting, we'll show what's actually moving.
+    real_processing_count = len(active_recording_ids)
     
     total_pending = queued_count + processing_count
     can_accept = total_pending < threshold
     
     return QueueStatusResponse(
         queued=queued_count,
-        processing=processing_count,
+        processing=real_processing_count,
         active_tasks=active_tasks,
         can_accept_more=can_accept,
         threshold=threshold,

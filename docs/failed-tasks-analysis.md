@@ -45,6 +45,8 @@ With `TASK_TIMEOUT_SECONDS=1800` (30 min), each run hits `TimeLimitExceeded(1800
 
 - **Preserve root cause in DB:** When marking a recording as failed after max retries, we now keep the last specific error (e.g. “Timeout exceeded: TimeLimitExceeded(1800)”) in `error_message` instead of only “Max retries exceeded”. That makes future analysis easier.
 
+- **Step and segment context in error_message:** New failures include where the job was when it failed. Timeouts/exceptions set `error_message` to e.g. `Step transcribe (45 segments): Timeout exceeded: ...`. When the beat task marks a recording failed because it was stuck, `error_message` is e.g. `Stuck in step transcribe (45 segments); last update 15m ago (cleanup)`. Use this to see if a job was stuck in transcribe, diarization, etc.
+
 ---
 
 ## What to treat as not relevant
@@ -60,3 +62,25 @@ With `TASK_TIMEOUT_SECONDS=1800` (30 min), each run hits `TimeLimitExceeded(1800
 
 4. **Whether to retry or skip**  
    If you don’t need these four calls transcribed, you can leave them as `failed` or set `status = 'skipped'`. No code change required.
+
+---
+
+## Current status check (2026-02-13)
+
+**Windows deployment:**
+
+- **Containers:** All up (API, worker, beat, watcher, postgres, redis, flower, exporters).
+- **DB:** 1512 recordings — 1494 done, 4 failed, **14 processing**.
+- **API queue status (watcher indication):** Queued: 0, Processing: 14, can_accept_more: True (threshold 20). This **matches the DB** and is valid: the API correctly reflects current status.
+
+**Issue: 14 stuck in `processing`**
+
+- All 14 have `updated_at` ~1h44 ago (one row ~1 min ago). So 13 are **stuck** (no heartbeat for ~15+ min; they should be reset by the periodic task).
+- **Cause:** One worker, one concurrency. The worker is busy with a long-running `process_recording`, so the periodic **stuck-cleanup** task `enqueue_pending_recordings` is sent by beat every 2 min but may sit in the queue and not run; when it never runs, stuck rows are never reset.
+- **Fix options:**
+  1. **Restart the worker** so the current long task is aborted and the queue is processed; the next `enqueue_pending_recordings` run will reset the 13 stuck rows to queued (or failed if at max retries).
+  2. **Manual reset** (run on Windows via Ansible or SSH):
+     ```bash
+     docker exec whisper-postgres psql -U whisper -d whisper -c "UPDATE recordings SET status = 'queued', error_message = NULL WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '15 minutes';"
+     ```
+  3. Optionally **increase worker concurrency** or run a dedicated worker for beat tasks so `enqueue_pending_recordings` can run even when one long transcription is in progress (requires deploy/config change).

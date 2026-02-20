@@ -20,7 +20,7 @@ How to reach the Windows deployment server and work directly with debugging (log
   ansible-galaxy collection install ansible.windows
   ```
 - **Inventory:** Copy `ansible/inventory.ini.example` to `ansible/inventory.ini` and set:
-  - `ansible_host` – Windows server IP (e.g. `192.168.50.9`)
+  - `ansible_host` – Windows server IP (e.g. `192.168.1.9`)
   - `ansible_user` – Windows username
   - `ansible_password` – Windows password
 
@@ -77,7 +77,7 @@ When you need to open the API, Flower, or Grafana in a browser (or run Prometheu
   ```bash
    ./monitoring/tunnel.sh your-username@WINDOWS_IP
   ```
-   Example: `./monitoring/tunnel.sh admin@192.168.50.9`
+   Example: `./monitoring/tunnel.sh admin@192.168.1.9`
 2. **Leave that terminal open.** Then on the Mac:
   - API: [http://localhost:8000](http://localhost:8000)
   - Flower: [http://localhost:5555](http://localhost:5555)

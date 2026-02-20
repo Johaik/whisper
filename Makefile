@@ -123,7 +123,7 @@ tunnel:
 	@echo "Starting SSH tunnel to Windows..."
 	@echo "This will forward monitoring ports from Windows to localhost"
 	@echo ""
-	@cd monitoring && ./tunnel.sh johaik@192.168.50.9
+	@cd monitoring && ./tunnel.sh johaik@192.168.1.9
 
 monitor:
 	@echo "Starting monitoring stack (Prometheus + Grafana)..."

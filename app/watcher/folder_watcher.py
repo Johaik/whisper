@@ -147,11 +147,19 @@ class FolderWatcher:
         session = SyncSessionLocal()
         try:
             for file_path in audio_files:
+                # First check by name (faster)
+                existing_name = session.query(Recording).filter(
+                    Recording.file_name == file_path.name
+                ).first()
+                if existing_name:
+                    continue
+
+                # Then check by hash
                 file_hash = compute_file_hash(str(file_path))
-                existing = session.query(Recording).filter(
+                existing_hash = session.query(Recording).filter(
                     Recording.file_hash == file_hash
                 ).first()
-                if not existing:
+                if not existing_hash:
                     pending += 1
         finally:
             session.close()
@@ -182,18 +190,20 @@ class FolderWatcher:
         
         # Get files that are already processed (in database)
         processed_hashes: set[str] = set()
+        processed_names: set[str] = set()
         session = SyncSessionLocal()
         try:
-            recordings = session.query(Recording.file_hash).all()
+            recordings = session.query(Recording.file_hash, Recording.file_name).all()
             processed_hashes = {r.file_hash for r in recordings}
+            processed_names = {r.file_name for r in recordings}
         finally:
             session.close()
         
         # Find files to sync (not in calls folder)
         candidates: list[Path] = []
         for source_file in source_files:
-            if source_file.name not in calls_files:
-                # Check if already processed by hash
+            if source_file.name not in calls_files and source_file.name not in processed_names:
+                # Check if already processed by hash (in case filename changed but content is same)
                 try:
                     file_hash = compute_file_hash(str(source_file))
                     if file_hash not in processed_hashes:
@@ -244,13 +254,22 @@ class FolderWatcher:
 
         session = SyncSessionLocal()
         try:
-            # Check if already in database
-            existing = session.query(Recording).filter(
+            # Check if already in database by hash
+            existing_hash = session.query(Recording).filter(
                 Recording.file_hash == file_hash
             ).first()
 
-            if existing:
-                logger.debug(f"File {file_path.name} already in database (id={existing.id})")
+            if existing_hash:
+                logger.debug(f"File {file_path.name} already in database by hash (id={existing_hash.id})")
+                return False
+
+            # Check if already in database by filename (to prevent duplicates if file content changes slightly)
+            existing_name = session.query(Recording).filter(
+                Recording.file_name == file_path.name
+            ).first()
+
+            if existing_name:
+                logger.debug(f"File {file_path.name} already in database by name (id={existing_name.id}, status={existing_name.status.value})")
                 return False
 
             # Create new recording

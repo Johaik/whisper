@@ -80,7 +80,7 @@ Used to look up caller names from Google Contacts based on phone number.
 
 ```ini
 [windows]
-winhost ansible_host=192.168.50.9
+winhost ansible_host=192.168.1.9
 
 [windows:vars]
 ansible_user=your_username

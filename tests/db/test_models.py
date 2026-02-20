@@ -66,6 +66,37 @@ class TestRecordingModel:
         assert recording.duration_sec == 120.5
         assert recording.metadata_json == {"extra": "data"}
 
+    def test_recording_processing_step_persisted(self, db_session: Session):
+        """Test that processing_step and processing_step_started_at can be set and persisted."""
+        started = datetime.utcnow()
+        recording = Recording(
+            file_path="/data/calls/test.m4a",
+            file_name="test.m4a",
+            file_hash="step123",
+            file_size=1024,
+            status=RecordingStatus.PROCESSING,
+            processing_step="transcribe",
+            processing_step_started_at=started,
+            processing_segments_count=5,
+        )
+        db_session.add(recording)
+        db_session.commit()
+        db_session.refresh(recording)
+
+        assert recording.processing_step == "transcribe"
+        assert recording.processing_step_started_at is not None
+        assert recording.processing_segments_count == 5
+
+        # Clear and persist
+        recording.processing_step = None
+        recording.processing_step_started_at = None
+        recording.processing_segments_count = None
+        db_session.commit()
+        db_session.refresh(recording)
+        assert recording.processing_step is None
+        assert recording.processing_step_started_at is None
+        assert recording.processing_segments_count is None
+
     def test_recording_status_transitions(self, db_session: Session):
         """Test status field can be updated."""
         recording = Recording(

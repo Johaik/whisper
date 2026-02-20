@@ -1,5 +1,6 @@
 """Shared test fixtures and configuration."""
 
+import socket
 import tempfile
 import uuid
 from collections.abc import AsyncGenerator, Generator
@@ -28,10 +29,13 @@ from app.processors.transcribe import TranscriptSegment
 
 def get_test_settings() -> Settings:
     """Get test-specific settings."""
+    # Short timeouts so tests fail fast when Postgres/Redis are not running
+    db_url_sync = "postgresql://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3"
+    db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3000"
     return Settings(
         api_token="test-token",
-        database_url="postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test",
-        database_url_sync="postgresql://whisper_test:whisper_test@localhost:5433/whisper_test",
+        database_url=db_url_async,
+        database_url_sync=db_url_sync,
         redis_url="redis://localhost:6380/0",
         calls_dir=str(Path(__file__).parent / "fixtures"),
         output_dir="/tmp/whisper_test_outputs",
@@ -49,9 +53,22 @@ def test_settings() -> Settings:
 # Database Fixtures
 # ============================================
 
+
+def _test_db_reachable() -> bool:
+    """Return True if test Postgres (localhost:5433) is reachable within 2s."""
+    try:
+        sock = socket.create_connection(("localhost", 5433), timeout=2)
+        sock.close()
+        return True
+    except (OSError, socket.timeout):
+        return False
+
+
 @pytest.fixture(scope="function")
 def db_session() -> Generator[Session, None, None]:
     """Provide a sync database session with clean tables for each test."""
+    if not _test_db_reachable():
+        pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
     settings = get_test_settings()
     engine = create_engine(
         settings.database_url_sync,
@@ -78,6 +95,8 @@ def db_session() -> Generator[Session, None, None]:
 @pytest_asyncio.fixture(scope="function")
 async def async_engine():
     """Create async database engine for tests."""
+    if not _test_db_reachable():
+        pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
     settings = get_test_settings()
     engine = create_async_engine(
         settings.database_url,

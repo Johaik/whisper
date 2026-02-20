@@ -75,7 +75,7 @@ Edit `ansible/inventory.ini`:
 
 ```ini
 [windows]
-winhost ansible_host=192.168.50.9  # Your Windows IP
+winhost ansible_host=192.168.1.9  # Your Windows IP
 
 [windows:vars]
 ansible_user=your_username
@@ -195,7 +195,7 @@ http://localhost:8000/api/v1/health
 
 ```bash
 # Test from Mac
-curl http://192.168.50.9:5985
+curl http://192.168.1.9:5985
 
 # If timeout, check Windows firewall
 ```

@@ -1,10 +1,12 @@
 """Integration tests for Celery tasks."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from tests.conftest import _test_db_reachable
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,7 +16,7 @@ from app.processors.analytics import AnalyticsResult
 from app.processors.diarize import DiarizationResult
 from app.processors.metadata import AudioMetadata
 from app.processors.transcribe import TranscriptionResult, TranscriptSegment
-from app.worker.tasks import process_recording
+from app.worker.tasks import enqueue_pending_recordings, process_recording
 
 
 pytestmark = pytest.mark.integration
@@ -22,14 +24,17 @@ pytestmark = pytest.mark.integration
 
 def get_test_settings() -> Settings:
     """Get test-specific settings."""
+    db_url_sync = "postgresql://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3"
+    db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3000"
     return Settings(
         api_token="test-token",
-        database_url="postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test",
-        database_url_sync="postgresql://whisper_test:whisper_test@localhost:5433/whisper_test",
+        database_url=db_url_async,
+        database_url_sync=db_url_sync,
         redis_url="redis://localhost:6380/0",
         calls_dir="/tmp/test_calls",
         output_dir="/tmp/whisper_test_outputs",
         diarization_enabled=False,
+        heartbeat_interval_sec=0,  # Disable heartbeat in tests to avoid thread/DB contention and hang
     )
 
 
@@ -39,6 +44,8 @@ class TestProcessRecordingTask:
     @pytest.fixture
     def task_db_engine(self):
         """Create a database engine for celery task tests."""
+        if not _test_db_reachable():
+            pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
         settings = get_test_settings()
         engine = create_engine(settings.database_url_sync)
 
@@ -260,10 +267,11 @@ class TestProcessRecordingTask:
                     with pytest.raises(RuntimeError):
                         process_recording(str(recording_id))
 
-        # Verify error message was stored
+        # Verify error message was stored (includes step for diagnosis)
         verify_session = task_session_factory()
         recording = verify_session.query(Recording).filter(Recording.id == recording_id).first()
-        assert recording.error_message == "ffprobe failed"
+        assert "extract_metadata" in (recording.error_message or "")
+        assert "ffprobe failed" in (recording.error_message or "")
         verify_session.close()
 
     def test_process_recording_with_diarization(self, task_session_factory, mock_processors):
@@ -440,4 +448,177 @@ class TestProcessRecordingTask:
         rec = verify_session.query(Recording).filter(Recording.id == recording_id).first()
         assert rec.status == RecordingStatus.DONE
         assert rec.processing_segments_count is None
+        assert rec.processing_step is None
+        assert rec.processing_step_started_at is None
         verify_session.close()
+
+    def test_process_recording_error_message_includes_step_on_transcribe_failure(
+        self, task_session_factory, mock_processors
+    ):
+        """Test that when transcribe fails, error_message includes step and segment count."""
+        setup_session = task_session_factory()
+        recording = Recording(
+            id=uuid.uuid4(),
+            file_path="/data/calls/test.m4a",
+            file_name="test.m4a",
+            file_hash="transcribeerrhash",
+            file_size=768000,
+            status=RecordingStatus.QUEUED,
+        )
+        setup_session.add(recording)
+        setup_session.commit()
+        recording_id = recording.id
+        setup_session.close()
+
+        def mock_get_session():
+            return task_session_factory()
+
+        def transcribe_side_effect(*args, **kwargs):
+            progress_cb = kwargs.get("progress_callback")
+            if progress_cb:
+                progress_cb(5)  # simulate 5 segments before failure
+            raise RuntimeError("Whisper model error")
+
+        mock_processors["transcribe"].side_effect = transcribe_side_effect
+
+        with patch("app.worker.tasks.get_sync_session", mock_get_session):
+            with patch("app.worker.tasks.get_settings") as mock_settings:
+                mock_settings.return_value = get_test_settings()
+                with pytest.raises(RuntimeError):
+                    process_recording(str(recording_id))
+
+        verify_session = task_session_factory()
+        rec = verify_session.query(Recording).filter(Recording.id == recording_id).first()
+        assert "transcribe" in (rec.error_message or "")
+        assert "5 segments" in (rec.error_message or "")
+        assert "Whisper model error" in (rec.error_message or "")
+        verify_session.close()
+
+
+class TestEnqueuePendingRecordings:
+    """Tests for the enqueue_pending_recordings (beat) task."""
+
+    @pytest.fixture
+    def beat_db_engine(self):
+        """Create a database engine for beat task tests."""
+        if not _test_db_reachable():
+            pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
+        settings = get_test_settings()
+        engine = create_engine(settings.database_url_sync)
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        yield engine
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+    @pytest.fixture
+    def beat_session_factory(self, beat_db_engine):
+        return sessionmaker(bind=beat_db_engine)
+
+    def test_stuck_recording_marked_failed_with_step_in_error_message(
+        self, beat_session_factory
+    ):
+        """When a stuck PROCESSING recording is at max retries, error_message includes step and segments."""
+        from app.config import get_settings
+
+        session = beat_session_factory()
+        settings = get_settings()
+        stuck_threshold = settings.stuck_processing_threshold_sec
+        # Create a recording that will be considered stuck (updated_at in the past)
+        rec = Recording(
+            id=uuid.uuid4(),
+            file_path="/data/calls/stuck.m4a",
+            file_name="stuck.m4a",
+            file_hash="stuckhash",
+            file_size=1000,
+            status=RecordingStatus.PROCESSING,
+            processing_step="transcribe",
+            processing_segments_count=30,
+            retry_count=settings.task_max_retries - 1,  # one more stuck run will mark failed
+            updated_at=datetime.utcnow()
+            - timedelta(seconds=stuck_threshold + 60),
+        )
+        session.add(rec)
+        session.commit()
+        recording_id = rec.id
+        session.close()
+
+        def mock_get_session():
+            return beat_session_factory()
+
+        with patch("app.worker.tasks.get_sync_session", mock_get_session):
+            with patch("app.worker.tasks.get_settings") as mock_settings:
+                mock_settings.return_value = get_test_settings()
+                enqueue_pending_recordings()
+
+        verify = beat_session_factory()
+        r = verify.query(Recording).filter(Recording.id == recording_id).first()
+        assert r.status == RecordingStatus.FAILED
+        assert "transcribe" in (r.error_message or "")
+        assert "30 segments" in (r.error_message or "")
+        assert "cleanup" in (r.error_message or "")
+        verify.close()
+
+    def test_stuck_recording_logged_with_step_and_segments(
+        self, beat_session_factory, caplog
+    ):
+        """Beat task logs stuck recordings with file, step, segments, age_sec."""
+        from app.config import get_settings
+
+        session = beat_session_factory()
+        settings = get_settings()
+        stuck_threshold = settings.stuck_processing_threshold_sec
+        rec = Recording(
+            id=uuid.uuid4(),
+            file_path="/data/calls/logged.m4a",
+            file_name="logged.m4a",
+            file_hash="loggedhash",
+            file_size=1000,
+            status=RecordingStatus.PROCESSING,
+            processing_step="diarization",
+            processing_segments_count=0,
+            retry_count=settings.task_max_retries - 1,
+            updated_at=datetime.utcnow()
+            - timedelta(seconds=stuck_threshold + 10),
+        )
+        session.add(rec)
+        session.commit()
+        session.close()
+
+        with patch("app.worker.tasks.get_sync_session", lambda: beat_session_factory()):
+            with patch("app.worker.tasks.get_settings") as mock_settings:
+                mock_settings.return_value = get_test_settings()
+                with caplog.at_level("WARNING"):
+                    enqueue_pending_recordings()
+
+        assert any("Stuck recording" in rec.message for rec in caplog.records)
+        assert any("logged.m4a" in rec.message for rec in caplog.records)
+        assert any("diarization" in rec.message for rec in caplog.records)
+
+    def test_processing_not_stuck_when_updated_at_recent(self, beat_session_factory):
+        """PROCESSING recording with recent updated_at is not reset."""
+        session = beat_session_factory()
+        rec = Recording(
+            id=uuid.uuid4(),
+            file_path="/data/calls/recent.m4a",
+            file_name="recent.m4a",
+            file_hash="recenthash",
+            file_size=1000,
+            status=RecordingStatus.PROCESSING,
+            processing_step="transcribe",
+            updated_at=datetime.utcnow(),  # just now
+        )
+        session.add(rec)
+        session.commit()
+        recording_id = rec.id
+        session.close()
+
+        with patch("app.worker.tasks.get_sync_session", lambda: beat_session_factory()):
+            with patch("app.worker.tasks.get_settings") as mock_settings:
+                mock_settings.return_value = get_test_settings()
+                enqueue_pending_recordings()
+
+        verify = beat_session_factory()
+        r = verify.query(Recording).filter(Recording.id == recording_id).first()
+        assert r.status == RecordingStatus.PROCESSING
+        verify.close()

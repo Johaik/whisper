@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from billiard.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
+from sqlalchemy.orm import Session
 from celery import Task
 from celery.exceptions import MaxRetriesExceededError, Retry
 
@@ -22,6 +23,18 @@ from app.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def _error_message_with_step(session: Session, recording_id: str, base_message: str) -> str:
+    """Build error message including current processing step and segment count if in transcribe."""
+    rec = session.query(Recording).filter(Recording.id == recording_id).first()
+    if not rec:
+        return base_message
+    step = rec.processing_step or "unknown"
+    seg = rec.processing_segments_count
+    if seg is not None:
+        return f"Step {step} ({seg} segments): {base_message}"
+    return f"Step {step}: {base_message}"
 
 
 class ProcessingTask(Task):
@@ -51,6 +64,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
     logger.info(f"Processing recording: {recording_id}")
 
     session = get_sync_session()
+    settings = get_settings()  # Resolve at runtime so tests can patch get_settings
 
     try:
         # Get the recording
@@ -81,7 +95,15 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         file_path = recording.file_path
         logger.info(f"Processing file: {file_path}")
 
+        def set_processing_step(step: str) -> None:
+            rec = session.query(Recording).filter(Recording.id == recording_id).first()
+            if rec:
+                rec.processing_step = step
+                rec.processing_step_started_at = datetime.utcnow()
+                session.commit()
+
         # Step 0: Parse caller info from filename
+        set_processing_step("parse_metadata")
         logger.info("Step 0: Parsing caller metadata from filename...")
         try:
             caller_metadata = parse_recording_filename(recording.file_name)
@@ -121,6 +143,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             logger.warning(f"Filename parsing failed (continuing): {e}")
 
         # Step 1: Extract metadata
+        set_processing_step("extract_metadata")
         logger.info("Step 1: Extracting metadata...")
         try:
             metadata = extract_metadata(file_path)
@@ -137,8 +160,9 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             raise
 
         # Heartbeat: update recording.updated_at periodically so "stuck" = no progress, not long runtime
+        # Skip when <= 0 (e.g. in tests) to avoid thread/DB contention
         stop_heartbeat = threading.Event()
-        heartbeat_interval = max(60, settings.heartbeat_interval_sec)
+        heartbeat_interval = max(60, settings.heartbeat_interval_sec) if settings.heartbeat_interval_sec > 0 else 0
 
         def heartbeat_loop() -> None:
             while True:
@@ -157,14 +181,23 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                 if stop_heartbeat.wait(heartbeat_interval):
                     break
 
-        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
-        heartbeat_thread.start()
+        heartbeat_thread: threading.Thread | None = None
+        if heartbeat_interval > 0:
+            heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+            heartbeat_thread.start()
+        transcribe_started_at: datetime | None = None
         try:
             # Step 2: Transcribe (with segment progress for API and logs)
-            logger.info("Step 2: Transcribing audio...")
+            set_processing_step("transcribe")
             recording.processing_segments_count = 0
             session.commit()
+            duration_str = f" (duration {metadata.duration_sec / 60:.1f}m)" if metadata.duration_sec else ""
+            logger.info("Step 2: Transcribing audio...%s", duration_str)
             logger.info("Transcription progress: 0 segments (started)")
+            transcribe_started_at = datetime.utcnow()
+
+            duration_sec = metadata.duration_sec
+            estimated_segments = max(1, int((duration_sec or 0) / 30))  # ~2 segments per minute heuristic
 
             def progress_cb(segments_count: int) -> None:
                 rec = session.query(Recording).filter(Recording.id == recording_id).first()
@@ -172,8 +205,12 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                     rec.processing_segments_count = segments_count
                     if segments_count % 5 == 0 or segments_count == 1:
                         session.commit()
+                        pct = min(99, (100 * segments_count) // estimated_segments) if estimated_segments else 0
+                        elapsed = (datetime.utcnow() - transcribe_started_at).total_seconds() if transcribe_started_at else 0
+                        elapsed_str = f"{int(elapsed // 60)}m" if elapsed >= 60 else f"{int(elapsed)}s"
+                        extra = f" (~{pct}% estimated, elapsed {elapsed_str})" if duration_sec else ""
                         logger.info(
-                            f"Transcription progress: {segments_count} segment{'s' if segments_count != 1 else ''}"
+                            f"Transcription progress: {segments_count} segment{'s' if segments_count != 1 else ''} (step=transcribe){extra}"
                         )
 
             try:
@@ -200,6 +237,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                     diarization_pending = True
                     diarization_skip_reason = f"duration_exceeded:{metadata.duration_sec:.0f}s"
                 else:
+                    set_processing_step("diarization")
                     logger.info("Step 3: Running diarization...")
                     try:
                         diarization = diarize_audio(file_path)
@@ -210,6 +248,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                         diarization_enabled = False
 
             # Step 4: Compute analytics
+            set_processing_step("analytics")
             logger.info("Step 4: Computing analytics...")
             try:
                 analytics = compute_analytics(
@@ -221,14 +260,20 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                 raise
         finally:
             stop_heartbeat.set()
-            heartbeat_thread.join(timeout=5)
-            # Clear segment progress (success or failure)
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=5)
+            # Clear segment and step progress (success or failure)
             rec = session.query(Recording).filter(Recording.id == recording_id).first()
-            if rec and rec.processing_segments_count is not None:
-                rec.processing_segments_count = None
+            if rec:
+                if rec.processing_segments_count is not None:
+                    rec.processing_segments_count = None
+                if rec.processing_step is not None or rec.processing_step_started_at is not None:
+                    rec.processing_step = None
+                    rec.processing_step_started_at = None
                 session.commit()
 
         # Step 5: Store results
+        set_processing_step("store_results")
         logger.info("Step 5: Storing results...")
 
         # Create or update transcript
@@ -323,19 +368,21 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 
     except (SoftTimeLimitExceeded, TimeLimitExceeded) as e:
         logger.error(f"Timeout exceeded for {recording_id}: {e}")
-        
+
         # Update recording status based on retry count
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
         if recording:
             retry_count = self.request.retries
             recording.retry_count = retry_count
-            recording.error_message = f"Timeout exceeded: {e}"
-            
+            recording.error_message = _error_message_with_step(session, recording_id, f"Timeout exceeded: {e}")
+
             # If we've exceeded max retries, mark as failed
             if retry_count >= settings.task_max_retries:
                 logger.error(f"Max retries ({settings.task_max_retries}) exceeded for {recording_id} due to timeout")
                 recording.status = RecordingStatus.FAILED
-                recording.error_message = f"Timeout exceeded after {retry_count} retries: {e}"
+                recording.error_message = _error_message_with_step(
+                    session, recording_id, f"Timeout exceeded after {retry_count} retries: {e}"
+                )
                 session.commit()
                 # Don't re-raise - mark as failed and stop
                 return {"status": "failed", "recording_id": recording_id, "error": "Timeout exceeded after max retries"}
@@ -354,7 +401,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
         if recording:
             recording.status = RecordingStatus.FAILED
-            # Keep existing error_message (e.g. "Timeout exceeded: ...") so root cause is visible
+            # Keep existing error_message (e.g. "Step X (N segments): Timeout exceeded...") so root cause is visible
             recording.error_message = recording.error_message or "Max retries exceeded"
             session.commit()
         raise
@@ -362,12 +409,12 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Processing failed for {recording_id}: {e}")
 
-        # Update recording with error
+        # Update recording with error (include step and segments for diagnosis)
         recording = session.query(Recording).filter(Recording.id == recording_id).first()
         if recording:
             retry_count = self.request.retries
             recording.retry_count = retry_count
-            recording.error_message = str(e)
+            recording.error_message = _error_message_with_step(session, recording_id, str(e))
             
             # If we've exceeded max retries, mark as failed
             if retry_count >= settings.task_max_retries:
@@ -409,6 +456,23 @@ def enqueue_pending_recordings() -> dict[str, Any]:
     stuck_threshold_sec = settings.stuck_processing_threshold_sec
     cutoff = datetime.utcnow() - timedelta(seconds=stuck_threshold_sec)
     try:
+        # Get active tasks from Celery to avoid resetting tasks that are actually running
+        active_recording_ids = set()
+        try:
+            inspect = celery_app.control.inspect()
+            active = inspect.active()
+            if active:
+                for worker_tasks in active.values():
+                    for task in worker_tasks:
+                        if task.get("name") == "process_recording" and task.get("args"):
+                            # recording_id is the first arg
+                            try:
+                                active_recording_ids.add(task["args"][0])
+                            except (IndexError, KeyError):
+                                pass
+        except Exception as e:
+            logger.warning(f"Could not get active tasks during stuck recovery: {e}")
+
         # 1) Stuck recovery: PROCESSING with updated_at too old -> QUEUED or FAILED
         stuck = (
             session.query(Recording)
@@ -417,15 +481,35 @@ def enqueue_pending_recordings() -> dict[str, Any]:
         )
         failed_count = 0
         queued_count = 0
+        now = datetime.utcnow()
         for rec in stuck:
+            # If the task is explicitly active in Celery, it's not stuck
+            if str(rec.id) in active_recording_ids:
+                continue
+
             updated_naive = rec.updated_at.replace(tzinfo=None) if getattr(rec.updated_at, "tzinfo", None) else rec.updated_at
             if updated_naive is None or updated_naive >= cutoff:
                 continue
+            age_sec = (now - updated_naive).total_seconds()
+            step = rec.processing_step or "?"
+            segments = rec.processing_segments_count or 0
+            logger.warning(
+                "Stuck recording: id=%s file=%s step=%s segments=%s last_update=%s age_sec=%.0f",
+                rec.id,
+                rec.file_name,
+                step,
+                segments,
+                updated_naive,
+                age_sec,
+            )
             retry_count = (rec.retry_count or 0) + 1
             rec.retry_count = retry_count
             if retry_count >= settings.task_max_retries:
                 rec.status = RecordingStatus.FAILED
-                rec.error_message = "Stuck/timeout after max retries (cleanup)"
+                age_min = int(age_sec // 60)
+                rec.error_message = (
+                    f"Stuck in step {step} ({segments} segments); last update {age_min}m ago (cleanup)"
+                )
                 failed_count += 1
             else:
                 rec.status = RecordingStatus.QUEUED

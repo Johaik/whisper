@@ -58,9 +58,11 @@ def get_or_load_pipeline() -> Any:
                 os.environ["HF_TOKEN"] = settings.huggingface_token
 
             logger.info("Loading pyannote speaker diarization pipeline...")
+            import torch
             pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
             )
+            pipeline = pipeline.to(torch.device("cpu"))
             _pipeline_cache["pipeline"] = pipeline
             logger.info("Diarization pipeline loaded successfully")
         except Exception as e:
