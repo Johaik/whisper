@@ -40,7 +40,10 @@ def _error_message_with_step(session: Session, recording_id: str | uuid.UUID, ba
         return base_message
 
     # Refresh to ensure we have latest step
-    session.refresh(rec)
+    try:
+        session.refresh(rec)
+    except:
+        pass
 
     step = rec.processing_step or "unknown"
     seg = rec.processing_segments_count
@@ -78,14 +81,18 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
     session = get_sync_session()
     settings = get_settings()  # Resolve at runtime so tests can patch get_settings
 
+    # Heartbeat and progress cleanup state
+    stop_heartbeat = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
+    
+    # Convert string ID to UUID object to ensure compatibility
     try:
-        # Convert string ID to UUID object to ensure compatibility
-        try:
-            rec_uuid = uuid.UUID(recording_id)
-        except ValueError:
-            logger.error(f"Invalid UUID: {recording_id}")
-            return {"status": "error", "message": "Invalid UUID"}
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        logger.error(f"Invalid UUID: {recording_id}")
+        return {"status": "error", "message": "Invalid UUID"}
 
+    try:
         # Get the recording
         recording = session.query(Recording).filter(Recording.id == rec_uuid).first()
 
@@ -178,9 +185,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             logger.error(f"Metadata extraction failed: {e}")
             raise
 
-        # Heartbeat: update recording.updated_at periodically so "stuck" = no progress, not long runtime
-        # Skip when <= 0 (e.g. in tests) to avoid thread/DB contention
-        stop_heartbeat = threading.Event()
+        # Heartbeat setup
         heartbeat_interval = max(60, settings.heartbeat_interval_sec) if settings.heartbeat_interval_sec > 0 else 0
 
         def heartbeat_loop() -> None:
@@ -200,89 +205,83 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                 if stop_heartbeat.wait(heartbeat_interval):
                     break
 
-        heartbeat_thread: threading.Thread | None = None
         if heartbeat_interval > 0:
             heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
             heartbeat_thread.start()
+
         transcribe_started_at: datetime | None = None
-        try:
-            # Step 2: Transcribe (with segment progress for API and logs)
-            set_processing_step("transcribe")
-            recording.processing_segments_count = 0
-            session.commit()
-            duration_str = f" (duration {metadata.duration_sec / 60:.1f}m)" if metadata.duration_sec else ""
-            logger.info("Step 2: Transcribing audio...%s", duration_str)
-            logger.info("Transcription progress: 0 segments (started)")
-            transcribe_started_at = datetime.now(timezone.utc)
+        # Inner processing logic
+        # Step 2: Transcribe (with segment progress for API and logs)
+        set_processing_step("transcribe")
+        recording.processing_segments_count = 0
+        session.commit()
+        duration_str = f" (duration {metadata.duration_sec / 60:.1f}m)" if metadata.duration_sec else ""
+        logger.info("Step 2: Transcribing audio...%s", duration_str)
+        logger.info("Transcription progress: 0 segments (started)")
+        transcribe_started_at = datetime.now(timezone.utc)
 
-            duration_sec = metadata.duration_sec
-            estimated_segments = max(1, int((duration_sec or 0) / 30))  # ~2 segments per minute heuristic
+        duration_sec = metadata.duration_sec
+        estimated_segments = max(1, int((duration_sec or 0) / 30))  # ~2 segments per minute heuristic
 
-            def progress_cb(segments_count: int) -> None:
-                rec = session.query(Recording).filter(Recording.id == rec_uuid).first()
-                if rec:
-                    rec.processing_segments_count = segments_count
-                    if segments_count % 5 == 0 or segments_count == 1:
-                        session.commit()
-                        pct = min(99, (100 * segments_count) // estimated_segments) if estimated_segments else 0
-                        elapsed = (datetime.now(timezone.utc) - transcribe_started_at).total_seconds() if transcribe_started_at else 0
-                        elapsed_str = f"{int(elapsed // 60)}m" if elapsed >= 60 else f"{int(elapsed)}s"
-                        extra = f" (~{pct}% estimated, elapsed {elapsed_str})" if duration_sec else ""
-                        logger.info(
-                            f"Transcription progress: {segments_count} segment{'s' if segments_count != 1 else ''} (step=transcribe){extra}"
-                        )
-
-            try:
-                transcript_result = transcribe_audio(file_path, progress_callback=progress_cb)
-            except Exception as e:
-                logger.error(f"Transcription failed: {e}")
-                raise
-
-            # Step 3: Diarization (optional)
-            segments = transcript_result.segments
-            diarization_enabled = settings.diarization_enabled
-            diarization_pending = False
-            diarization_skip_reason = None
-            speaker_count = 0
-
-            if diarization_enabled:
-                # Check if duration exceeds threshold - skip diarization for long recordings
-                if metadata.duration_sec and metadata.duration_sec > settings.diarization_max_duration_sec:
+        def progress_cb(segments_count: int) -> None:
+            rec = session.query(Recording).filter(Recording.id == rec_uuid).first()
+            if rec:
+                rec.processing_segments_count = segments_count
+                if segments_count % 5 == 0 or segments_count == 1:
+                    session.commit()
+                    pct = min(99, (100 * segments_count) // estimated_segments) if estimated_segments else 0
+                    elapsed = (datetime.now(timezone.utc) - transcribe_started_at).total_seconds() if transcribe_started_at else 0
+                    elapsed_str = f"{int(elapsed // 60)}m" if elapsed >= 60 else f"{int(elapsed)}s"
+                    extra = f" (~{pct}% estimated, elapsed {elapsed_str})" if duration_sec else ""
                     logger.info(
-                        f"Skipping diarization: duration {metadata.duration_sec:.0f}s > "
-                        f"{settings.diarization_max_duration_sec}s threshold"
+                        f"Transcription progress: {segments_count} segment{'s' if segments_count != 1 else ''} (step=transcribe){extra}"
                     )
-                    diarization_enabled = False
-                    diarization_pending = True
-                    diarization_skip_reason = f"duration_exceeded:{metadata.duration_sec:.0f}s"
-                else:
-                    set_processing_step("diarization")
-                    logger.info("Step 3: Running diarization...")
-                    try:
-                        diarization = diarize_audio(file_path)
-                        segments = assign_speakers_to_transcript(segments, diarization)
-                        speaker_count = diarization.speaker_count
-                    except Exception as e:
-                        logger.warning(f"Diarization failed (continuing without): {e}")
-                        diarization_enabled = False
 
-            # Step 4: Compute analytics
-            set_processing_step("analytics")
-            logger.info("Step 4: Computing analytics...")
-            try:
-                analytics = compute_analytics(
-                    segments=segments,
-                    total_duration=metadata.duration_sec,
+        try:
+            transcript_result = transcribe_audio(file_path, progress_callback=progress_cb)
+        except Exception as e:
+            logger.error(f"Transcription failed: {e}")
+            raise
+
+        # Step 3: Diarization (optional)
+        segments = transcript_result.segments
+        diarization_enabled = settings.diarization_enabled
+        diarization_pending = False
+        diarization_skip_reason = None
+        speaker_count = 0
+
+        if diarization_enabled:
+            # Check if duration exceeds threshold - skip diarization for long recordings
+            if metadata.duration_sec and metadata.duration_sec > settings.diarization_max_duration_sec:
+                logger.info(
+                    f"Skipping diarization: duration {metadata.duration_sec:.0f}s > "
+                    f"{settings.diarization_max_duration_sec}s threshold"
                 )
-            except Exception as e:
-                logger.error(f"Analytics computation failed: {e}")
-                raise
-        finally:
-            stop_heartbeat.set()
-            if heartbeat_thread is not None:
-                heartbeat_thread.join(timeout=5)
-            # Clear segment and step progress (success or failure)
-            # REMOVED: processing_step cleanup is now at end of function or error handling
+                diarization_enabled = False
+                diarization_pending = True
+                diarization_skip_reason = f"duration_exceeded:{metadata.duration_sec:.0f}s"
+            else:
+                set_processing_step("diarization")
+                logger.info("Step 3: Running diarization...")
+                try:
+                    diarization = diarize_audio(file_path)
+                    segments = assign_speakers_to_transcript(segments, diarization)
+                    speaker_count = diarization.speaker_count
+                except Exception as e:
+                    logger.warning(f"Diarization failed (continuing without): {e}")
+                    diarization_enabled = False
+
+        # Step 4: Compute analytics
+        set_processing_step("analytics")
+        logger.info("Step 4: Computing analytics...")
+        try:
+            analytics = compute_analytics(
+                segments=segments,
+                total_duration=metadata.duration_sec,
+            )
+        except Exception as e:
+            logger.error(f"Analytics computation failed: {e}")
+            raise
 
         # Step 5: Store results
         set_processing_step("store_results")
@@ -364,7 +363,10 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 
         # Mark as done
         # Refresh to ensure latest state and attached
-        session.refresh(recording)
+        try:
+            session.refresh(recording)
+        except:
+            pass
 
         recording.status = RecordingStatus.DONE
         recording.processed_at = datetime.now(timezone.utc)
@@ -431,27 +433,20 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         logger.error(f"Processing failed for {recording_id}: {e}")
 
         # Update recording with error (include step and segments for diagnosis)
-        # Use rec_uuid if available, otherwise recording_id
-        try:
-             lookup_id = uuid.UUID(recording_id)
-        except:
-             lookup_id = None
-
-        if lookup_id:
-             recording = session.query(Recording).filter(Recording.id == lookup_id).first()
-             if recording:
-                retry_count = self.request.retries
-                recording.retry_count = retry_count
-                recording.error_message = _error_message_with_step(session, lookup_id, str(e))
-
-                # If we've exceeded max retries, mark as failed
-                if retry_count >= settings.task_max_retries:
-                    logger.error(f"Max retries ({settings.task_max_retries}) exceeded for {recording_id}")
-                    recording.status = RecordingStatus.FAILED
-                else:
-                    # Reset to queued for retry
-                    recording.status = RecordingStatus.QUEUED
-                session.commit()
+        recording = session.query(Recording).filter(Recording.id == rec_uuid).first()
+        if recording:
+            retry_count = self.request.retries
+            recording.retry_count = retry_count
+            recording.error_message = _error_message_with_step(session, rec_uuid, str(e))
+            
+            # If we've exceeded max retries, mark as failed
+            if retry_count >= settings.task_max_retries:
+                logger.error(f"Max retries ({settings.task_max_retries}) exceeded for {recording_id}")
+                recording.status = RecordingStatus.FAILED
+            else:
+                # Reset to queued for retry
+                recording.status = RecordingStatus.QUEUED
+            session.commit()
 
         # Re-raise for retry (only if not at max retries)
         if self.request.retries < settings.task_max_retries:
@@ -462,11 +457,25 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 
     finally:
         try:
+            # Stop heartbeat thread
+            stop_heartbeat.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=5)
+            
+            # Clear segment and step progress (success or failure)
+            # IMPORTANT: This happens AFTER any error_message_with_step calls in except blocks
+            rec = session.query(Recording).filter(Recording.id == rec_uuid).first()
+            if rec:
+                if rec.processing_segments_count is not None:
+                    rec.processing_segments_count = None
+                if rec.processing_step is not None or rec.processing_step_started_at is not None:
+                    rec.processing_step = None
+                    rec.processing_step_started_at = None
+                session.commit()
+            
             session.close()
         except Exception as e:
-            logger.debug(f"Session close (non-fatal): {e}")
-            # Do not re-raise: a successful return must not be turned into a retry
-            # by an exception in finally (autoretry_for would then retry the task).
+            logger.debug(f"Finally block cleanup failed (non-fatal): {e}")
 
 
 # Max recordings to enqueue per run of enqueue_pending_recordings

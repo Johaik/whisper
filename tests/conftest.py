@@ -78,7 +78,7 @@ def get_test_settings() -> Settings:
     else:
         # Short timeouts so tests fail fast when Postgres/Redis are not running
         db_url_sync = "postgresql://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3"
-        db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3000"
+        db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test"
 
     return Settings(
         api_token="test-token",

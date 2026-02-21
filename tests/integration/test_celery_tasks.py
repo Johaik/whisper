@@ -580,7 +580,7 @@ class TestEnqueuePendingRecordings:
             processing_segments_count=0,
             retry_count=settings.task_max_retries - 1,
             updated_at=datetime.now(timezone.utc)
-            - timedelta(seconds=stuck_threshold + 10),
+            - timedelta(seconds=stuck_threshold + 300),
         )
         session.add(rec)
         session.commit()
