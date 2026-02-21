@@ -589,12 +589,19 @@ class TestEnqueuePendingRecordings:
         with patch("app.worker.tasks.get_sync_session", lambda: beat_session_factory()):
             with patch("app.worker.tasks.get_settings") as mock_settings:
                 mock_settings.return_value = get_test_settings()
-                with caplog.at_level("WARNING"):
-                    enqueue_pending_recordings()
+                # Mock Celery control.inspect to avoid flakiness with real Redis
+                with patch("app.worker.tasks.celery_app.control.inspect") as mock_inspect:
+                    mock_inspect.return_value.active.return_value = None
+                    # Use mock logger for 100% reliability in full test suite
+                    with patch("app.worker.tasks.logger") as mock_logger:
+                        enqueue_pending_recordings()
 
-        assert any("Stuck recording" in rec.message for rec in caplog.records)
-        assert any("logged.m4a" in rec.message for rec in caplog.records)
-        assert any("diarization" in rec.message for rec in caplog.records)
+                        # Verify stuck log (check any call contains the expected parts)
+                        stuck_calls = [call for call in mock_logger.warning.call_args_list if "Stuck recording" in str(call)]
+                        assert len(stuck_calls) > 0, f"Stuck log missing. Calls: {mock_logger.warning.call_args_list}"
+                        call_msg = str(stuck_calls[0])
+                        assert "logged.m4a" in call_msg
+                        assert "diarization" in call_msg
 
     def test_processing_not_stuck_when_updated_at_recent(self, beat_session_factory):
         """PROCESSING recording with recent updated_at is not reset."""

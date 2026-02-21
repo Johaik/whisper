@@ -22,7 +22,7 @@ from app.processors.transcribe import segments_to_json, transcribe_audio
 from app.services.google_contacts import lookup_caller_name
 from app.worker.celery_app import celery_app
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("app.worker.tasks")
 settings = get_settings()
 
 
@@ -536,13 +536,7 @@ def enqueue_pending_recordings() -> dict[str, Any]:
             step = rec.processing_step or "?"
             segments = rec.processing_segments_count or 0
             logger.warning(
-                "Stuck recording: id=%s file=%s step=%s segments=%s last_update=%s age_sec=%.0f",
-                rec.id,
-                rec.file_name,
-                step,
-                segments,
-                rec_updated,
-                age_sec,
+                f"Stuck recording: id={rec.id} file={rec.file_name} step={step} segments={segments} last_update={rec_updated} age_sec={age_sec:.0f}"
             )
             retry_count = (rec.retry_count or 0) + 1
             rec.retry_count = retry_count
