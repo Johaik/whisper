@@ -72,6 +72,7 @@ def extract_metadata(audio_path: str) -> AudioMetadata:
         "-print_format", "json",
         "-show_format",
         "-show_streams",
+        "--",
         audio_path,
     ]
 
