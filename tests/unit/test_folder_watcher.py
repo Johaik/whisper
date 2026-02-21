@@ -329,3 +329,81 @@ class TestWatcherLifecycle:
 
         assert watcher._running is False
 
+
+class TestGetPendingCount:
+    """Tests for pending file counting optimization."""
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_optimized_pending_count(
+        self,
+        mock_hash: MagicMock,
+        mock_session_cls: MagicMock,
+        tmp_path: Path
+    ) -> None:
+        """Test that pending count uses batching and correct precedence."""
+        # Setup
+        watcher = FolderWatcher(folder=tmp_path)
+
+        # Create 3 files
+        files = ["f1.mp3", "f2.mp3", "f3.mp3"]
+        for f in files:
+            (tmp_path / f).touch()
+
+        # Mock session
+        session = MagicMock()
+        mock_session_cls.return_value = session
+
+        # f1: exists by name
+        # f2: exists by hash
+        # f3: new
+
+        mock_hash.side_effect = lambda x: f"hash_{Path(x).name}"
+
+        # First query result: existing names (f1)
+        # Second query result: existing hashes (f2)
+        # We need to structure the mock to return these results sequentially for .all() calls
+        session.query.return_value.filter.return_value.all.side_effect = [
+            [("f1.mp3",)],       # Names found
+            [("hash_f2.mp3",)]   # Hashes found
+        ]
+
+        count = watcher.get_pending_count_in_folder()
+
+        assert count == 1 # Only f3 is pending
+
+        # Verify that compute_file_hash was NOT called for f1 (since it was found by name)
+        called_paths = [Path(c[0][0]).name for c in mock_hash.call_args_list]
+        assert "f1.mp3" not in called_paths
+        assert "f2.mp3" in called_paths
+        assert "f3.mp3" in called_paths
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_batching_logic(
+        self,
+        mock_hash: MagicMock,
+        mock_session_cls: MagicMock,
+        tmp_path: Path
+    ) -> None:
+        """Test that large file lists are batched correctly."""
+        # Setup with enough files to trigger batching (batch size is 500)
+        watcher = FolderWatcher(folder=tmp_path)
+
+        # Create 550 files
+        for i in range(550):
+            (tmp_path / f"file_{i}.mp3").touch()
+
+        session = MagicMock()
+        mock_session_cls.return_value = session
+
+        # Assume no files exist
+        session.query.return_value.filter.return_value.all.return_value = []
+        mock_hash.return_value = "dummy_hash"
+
+        watcher.get_pending_count_in_folder()
+
+        # 550 files / 500 batch size = 2 batches for names
+        # 2 batches for hashes (since no names found)
+        # Total 4 calls to all()
+        assert session.query.return_value.filter.return_value.all.call_count == 4
