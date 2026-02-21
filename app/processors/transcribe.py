@@ -81,7 +81,7 @@ def transcribe_audio(
     device: str | None = None,
     compute_type: str | None = None,
     progress_callback: Callable[[int], None] | None = None,
-    language: str = "he",
+    language: str | None = None,
     task: str = "transcribe",
     initial_prompt: str | None = None,
 ) -> TranscriptionResult:
@@ -95,7 +95,7 @@ def transcribe_audio(
         vad_min_silence_ms: Minimum silence duration for VAD
         device: Device to use (cpu or cuda)
         compute_type: Compute type
-        language: Language code (default: "he")
+        language: Language code (default: None/auto-detect)
         task: Task to perform (transcribe or translate)
         initial_prompt: Optional prompt to guide transcription
 

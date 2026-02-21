@@ -128,7 +128,7 @@ class TestTranscribeAudio:
         # Verify model was called with correct language
         mock_whisper_model.transcribe.assert_called_once()
         call_kwargs = mock_whisper_model.transcribe.call_args[1]
-        assert call_kwargs["language"] == "he"
+        assert call_kwargs["language"] is None
 
     @patch("app.processors.transcribe.get_or_load_model")
     def test_transcribe_custom_beam_size(self, mock_get_model, mock_whisper_model):

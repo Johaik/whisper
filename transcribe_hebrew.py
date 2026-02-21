@@ -261,6 +261,7 @@ Recommended for Hebrew:
                 beam_size=args.beam_size,
                 vad_filter=not args.no_vad,
                 initial_prompt=args.prompt,
+                language="he",
             )
 
             # 3. Assign speakers
@@ -292,6 +293,7 @@ Recommended for Hebrew:
                 beam_size=args.beam_size,
                 vad_filter=not args.no_vad,
                 initial_prompt=args.prompt,
+                language="he",
             )
             result = format_result(transcription_result)
         except Exception as e:
