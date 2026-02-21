@@ -114,7 +114,6 @@ class TestDiarizeAudio:
         # Check that waveform dict was passed
         assert "waveform" in call_args[0]
         assert "sample_rate" in call_args[0]
-        
         # Check that num_speakers was passed in kwargs
         assert call_kwargs["num_speakers"] == 2
 
@@ -139,5 +138,4 @@ class TestDiarizeAudio:
 
         mock_pipeline.assert_called_once()
         _, call_kwargs = mock_pipeline.call_args
-
         assert "num_speakers" not in call_kwargs

@@ -66,6 +66,8 @@ def extract_metadata(audio_path: str) -> AudioMetadata:
     logger.info(f"Extracting metadata from: {audio_path}")
 
     # Run ffprobe
+    # Use absolute path to prevent argument injection if filename starts with '-'
+    # Also use "--" to explicitly stop option parsing
     cmd = [
         "ffprobe",
         "-v", "quiet",
@@ -73,7 +75,7 @@ def extract_metadata(audio_path: str) -> AudioMetadata:
         "-show_format",
         "-show_streams",
         "--",
-        audio_path,
+        str(path.absolute()),
     ]
 
     try:
@@ -131,4 +133,3 @@ def extract_metadata(audio_path: str) -> AudioMetadata:
         file_hash=file_hash,
         raw_metadata=probe_data,
     )
-

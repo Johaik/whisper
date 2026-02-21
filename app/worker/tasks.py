@@ -728,3 +728,4 @@ def enqueue_pending_recordings() -> dict[str, Any]:
         raise
     finally:
         session.close()
+
