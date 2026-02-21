@@ -183,6 +183,9 @@ async def ingest_folder(
 
     logger.info(f"Found {len(audio_files)} audio files")
 
+    file_data_list = []
+
+    # 1. First pass: compute hashes and gather metadata
     for audio_file in audio_files:
         try:
             file_path = str(audio_file.absolute())
@@ -190,41 +193,105 @@ async def ingest_folder(
             file_size = audio_file.stat().st_size
             file_hash = compute_file_hash(file_path)
 
-            # Check if already exists
-            result = await session.execute(
-                select(Recording).where(Recording.file_hash == file_hash)
-            )
-            existing = result.scalar_one_or_none()
+            file_data_list.append({
+                "path": file_path,
+                "name": file_name,
+                "size": file_size,
+                "hash": file_hash,
+                "file": audio_file # Keep reference for error reporting
+            })
+        except Exception as e:
+            logger.error(f"Error accessing file {audio_file}: {e}")
+            errors.append(f"{audio_file.name}: {str(e)}")
 
+    if not file_data_list:
+        logger.info("No valid files to process.")
+        return IngestResponse(
+            discovered=0,
+            queued=0,
+            skipped=0,
+            errors=errors,
+        )
+
+    # 2. Bulk fetch existing recordings
+    # Split into chunks to avoid potential query limits if many files
+    all_hashes = [f["hash"] for f in file_data_list]
+    existing_map: dict[str, Recording] = {}
+    chunk_size = 500
+
+    try:
+        for i in range(0, len(all_hashes), chunk_size):
+            chunk = all_hashes[i : i + chunk_size]
+            result = await session.execute(
+                select(Recording).where(Recording.file_hash.in_(chunk))
+            )
+            for rec in result.scalars().all():
+                existing_map[rec.file_hash] = rec
+    except Exception as e:
+        logger.error(f"Error querying existing recordings: {e}")
+        # Fail the whole batch if we can't check existence reliably
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error during ingest: {str(e)}",
+        )
+
+    # 3. Process files
+    processed_hashes = set()
+
+    for f_data in file_data_list:
+        file_hash = f_data["hash"]
+
+        if file_hash in processed_hashes:
+            skipped += 1
+            continue
+
+        existing = existing_map.get(file_hash)
+
+        try:
             if existing:
                 if request.force_reprocess or existing.status == RecordingStatus.FAILED:
                     # Reset for reprocessing
                     existing.status = RecordingStatus.QUEUED
                     existing.error_message = None
                     existing.retry_count = 0
-                    await session.commit()
+                    session.add(existing)  # Ensure it's in session
                     queued += 1
                 else:
                     skipped += 1
             else:
                 # Create new recording
                 recording = Recording(
-                    file_path=file_path,
-                    file_name=file_name,
+                    file_path=f_data["path"],
+                    file_name=f_data["name"],
                     file_hash=file_hash,
-                    file_size=file_size,
+                    file_size=f_data["size"],
                     status=RecordingStatus.QUEUED,
                 )
                 session.add(recording)
-                await session.commit()
-                await session.refresh(recording)
 
                 discovered += 1
                 queued += 1
 
+            processed_hashes.add(file_hash)
+
         except Exception as e:
-            logger.error(f"Error processing file {audio_file}: {e}")
-            errors.append(f"{audio_file.name}: {str(e)}")
+            # Should not happen for in-memory logic, but just in case
+            logger.error(f"Error preparing file {f_data['name']}: {e}")
+            errors.append(f"{f_data['name']}: {str(e)}")
+
+    # 4. Commit all changes
+    try:
+        if queued > 0:
+            await session.commit()
+    except Exception as e:
+        logger.error(f"Database commit failed: {e}")
+        # If commit fails, we don't know which one failed easily.
+        # Since we pre-checked for existence, duplicates are unlikely.
+        errors.append(f"Batch commit failed: {str(e)}")
+        # Reset counters as we failed to persist
+        discovered = 0
+        queued = 0
+        skipped = 0
 
     logger.info(
         f"Ingest complete: discovered={discovered}, queued={queued}, skipped={skipped}"
