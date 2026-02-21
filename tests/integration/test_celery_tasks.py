@@ -486,6 +486,58 @@ class TestProcessRecordingTask:
         assert "Whisper model error" in (rec.error_message or "")
         verify_session.close()
 
+    def test_process_recording_continues_on_diarization_failure(
+        self, task_session_factory, mock_processors
+    ):
+        """Test that processing continues even if diarization fails."""
+        # Create recording
+        setup_session = task_session_factory()
+        recording = Recording(
+            id=uuid.uuid4(),
+            file_path="/data/calls/test.m4a",
+            file_name="test.m4a",
+            file_hash="diarizefailhash",
+            file_size=768000,
+            status=RecordingStatus.QUEUED,
+        )
+        setup_session.add(recording)
+        setup_session.commit()
+        recording_id = recording.id
+        setup_session.close()
+
+        # Mock diarization to fail
+        mock_processors["diarize"].side_effect = Exception("Diarization service unavailable")
+
+        def mock_get_session():
+            return task_session_factory()
+
+        # Create settings with diarization enabled
+        diarize_settings = get_test_settings()
+        diarize_settings.diarization_enabled = True
+
+        with patch("app.worker.tasks.get_sync_session", mock_get_session):
+            with patch("app.worker.tasks.get_settings") as mock_settings:
+                mock_settings.return_value = diarize_settings
+                result = process_recording(str(recording_id))
+
+        # Verify task success
+        assert result["status"] == "success"
+
+        # Verify recording status is DONE
+        verify_session = task_session_factory()
+        rec = verify_session.query(Recording).filter(Recording.id == recording_id).first()
+        assert rec.status == RecordingStatus.DONE
+        assert rec.error_message is None
+
+        # Verify enrichment shows diarization disabled (due to failure)
+        enrichment = verify_session.query(Enrichment).filter(
+            Enrichment.recording_id == recording_id
+        ).first()
+        assert enrichment is not None
+        assert enrichment.diarization_enabled is False
+
+        verify_session.close()
+
 
 class TestEnqueuePendingRecordings:
     """Tests for the enqueue_pending_recordings (beat) task."""
