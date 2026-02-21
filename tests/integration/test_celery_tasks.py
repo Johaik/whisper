@@ -1,12 +1,12 @@
 """Integration tests for Celery tasks."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.conftest import _test_db_reachable
+from tests.conftest import _test_db_reachable, get_test_settings, USE_SQLITE
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -22,22 +22,6 @@ from app.worker.tasks import enqueue_pending_recordings, process_recording
 pytestmark = pytest.mark.integration
 
 
-def get_test_settings() -> Settings:
-    """Get test-specific settings."""
-    db_url_sync = "postgresql://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3"
-    db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test"
-    return Settings(
-        api_token="test-token",
-        database_url=db_url_async,
-        database_url_sync=db_url_sync,
-        redis_url="redis://localhost:6380/0",
-        calls_dir="/tmp/test_calls",
-        output_dir="/tmp/whisper_test_outputs",
-        diarization_enabled=False,
-        heartbeat_interval_sec=0,  # Disable heartbeat in tests to avoid thread/DB contention and hang
-    )
-
-
 class TestProcessRecordingTask:
     """Tests for the process_recording Celery task."""
 
@@ -47,7 +31,15 @@ class TestProcessRecordingTask:
         if not _test_db_reachable():
             pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
         settings = get_test_settings()
-        engine = create_engine(settings.database_url_sync)
+
+        connect_args = {}
+        if USE_SQLITE:
+            connect_args = {"check_same_thread": False}
+
+        engine = create_engine(
+            settings.database_url_sync,
+            connect_args=connect_args
+        )
 
         # Create fresh tables
         Base.metadata.drop_all(bind=engine)
@@ -504,7 +496,16 @@ class TestEnqueuePendingRecordings:
         if not _test_db_reachable():
             pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
         settings = get_test_settings()
-        engine = create_engine(settings.database_url_sync)
+
+        connect_args = {}
+        if USE_SQLITE:
+            connect_args = {"check_same_thread": False}
+
+        engine = create_engine(
+            settings.database_url_sync,
+            connect_args=connect_args
+        )
+
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
         yield engine
@@ -535,7 +536,7 @@ class TestEnqueuePendingRecordings:
             processing_step="transcribe",
             processing_segments_count=30,
             retry_count=settings.task_max_retries - 1,  # one more stuck run will mark failed
-            updated_at=datetime.utcnow()
+            updated_at=datetime.now(timezone.utc)
             - timedelta(seconds=stuck_threshold + 60),
         )
         session.add(rec)
@@ -578,7 +579,7 @@ class TestEnqueuePendingRecordings:
             processing_step="diarization",
             processing_segments_count=0,
             retry_count=settings.task_max_retries - 1,
-            updated_at=datetime.utcnow()
+            updated_at=datetime.now(timezone.utc)
             - timedelta(seconds=stuck_threshold + 300),
         )
         session.add(rec)
@@ -606,7 +607,7 @@ class TestEnqueuePendingRecordings:
             file_size=1000,
             status=RecordingStatus.PROCESSING,
             processing_step="transcribe",
-            updated_at=datetime.utcnow(),  # just now
+            updated_at=datetime.now(timezone.utc),  # just now
         )
         session.add(rec)
         session.commit()

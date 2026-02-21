@@ -3,19 +3,61 @@
 import socket
 import tempfile
 import uuid
+import sys
 from collections.abc import AsyncGenerator, Generator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
+import sqlalchemy
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+# ============================================
+# Database Patching
+# ============================================
+
+def _is_postgres_available():
+    """Check if Postgres is available."""
+    try:
+        sock = socket.create_connection(("localhost", 5433), timeout=1)
+        sock.close()
+        return True
+    except (OSError, socket.timeout):
+        return False
+
+# Use SQLite if Postgres is not available
+USE_SQLITE = not _is_postgres_available()
+
+if USE_SQLITE:
+    print("WARNING: Postgres not available. Patching SQLAlchemy to use SQLite for tests.")
+
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.types import JSON
+    import sqlalchemy.types as types
+
+    # Patch JSONB -> JSON
+    class MockJSONB(types.TypeDecorator):
+        impl = types.JSON
+        cache_ok = True
+        def load_dialect_impl(self, dialect):
+            return dialect.type_descriptor(types.JSON())
+
+    postgresql.JSONB = MockJSONB
+
+    # Patch UUID -> Uuid
+    # Uuid in SQLAlchemy 2.0 works with both native UUID and char/binary fallback
+    postgresql.UUID = types.Uuid
+
+# ============================================
+# Application Imports (Must be after patching)
+# ============================================
 
 from app.config import Settings, get_settings
 from app.db.models import Base, Enrichment, Recording, RecordingStatus, Transcript
@@ -29,9 +71,15 @@ from app.processors.transcribe import TranscriptSegment
 
 def get_test_settings() -> Settings:
     """Get test-specific settings."""
-    # Short timeouts so tests fail fast when Postgres/Redis are not running
-    db_url_sync = "postgresql://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3"
-    db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test"
+    if USE_SQLITE:
+        # Use in-memory SQLite
+        db_url_sync = "sqlite:///file:testdb?mode=memory&cache=shared&uri=true"
+        db_url_async = "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true"
+    else:
+        # Short timeouts so tests fail fast when Postgres/Redis are not running
+        db_url_sync = "postgresql://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3"
+        db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test"
+
     return Settings(
         api_token="test-token",
         database_url=db_url_async,
@@ -40,6 +88,7 @@ def get_test_settings() -> Settings:
         calls_dir=str(Path(__file__).parent / "fixtures"),
         output_dir="/tmp/whisper_test_outputs",
         diarization_enabled=False,
+        heartbeat_interval_sec=0,  # Disable heartbeat in tests to avoid thread/DB contention
     )
 
 
@@ -56,6 +105,8 @@ def test_settings() -> Settings:
 
 def _test_db_reachable() -> bool:
     """Return True if test Postgres (localhost:5433) is reachable within 2s."""
+    if USE_SQLITE:
+        return True
     try:
         sock = socket.create_connection(("localhost", 5433), timeout=2)
         sock.close()
@@ -70,10 +121,16 @@ def db_session() -> Generator[Session, None, None]:
     if not _test_db_reachable():
         pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
     settings = get_test_settings()
+
+    connect_args = {}
+    if USE_SQLITE:
+        connect_args = {"check_same_thread": False}
+
     engine = create_engine(
         settings.database_url_sync,
         echo=False,
         pool_pre_ping=True,
+        connect_args=connect_args
     )
 
     # Create all tables fresh for this test
@@ -83,6 +140,10 @@ def db_session() -> Generator[Session, None, None]:
     # Create session
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
+
+    if USE_SQLITE:
+        # Enable foreign keys for SQLite
+        session.execute(text("PRAGMA foreign_keys=ON"))
 
     yield session
 
@@ -98,15 +159,26 @@ async def async_engine():
     if not _test_db_reachable():
         pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
     settings = get_test_settings()
+
+    connect_args = {}
+    if USE_SQLITE:
+        connect_args = {"check_same_thread": False}
+
     engine = create_async_engine(
         settings.database_url,
         echo=False,
         pool_pre_ping=True,
+        connect_args=connect_args
     )
     # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
+    if USE_SQLITE:
+        async with engine.connect() as conn:
+            await conn.execute(text("PRAGMA foreign_keys=ON"))
+
     yield engine
     # Cleanup
     async with engine.begin() as conn:
@@ -168,7 +240,7 @@ def processed_recording(db_session: Session) -> Recording:
         channels=2,
         codec="aac",
         container="m4a",
-        processed_at=datetime.utcnow(),
+        processed_at=datetime.now(timezone.utc),
     )
     db_session.add(recording)
     db_session.flush()

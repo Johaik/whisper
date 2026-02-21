@@ -1,7 +1,7 @@
 """Unit tests for API response schemas."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -23,8 +23,8 @@ class TestRecordingSchemasSegmentProgress:
             file_size=1000,
             status=RecordingStatus.DONE,
             duration_sec=60.0,
-            created_at=datetime.utcnow(),
-            processed_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            processed_at=datetime.now(timezone.utc),
         )
         assert hasattr(item, "processing_segments_count")
         assert item.processing_segments_count is None
@@ -39,7 +39,7 @@ class TestRecordingSchemasSegmentProgress:
             file_size=1000,
             status=RecordingStatus.PROCESSING,
             duration_sec=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             processed_at=None,
             processing_segments_count=7,
         )
@@ -63,8 +63,8 @@ class TestRecordingSchemasSegmentProgress:
             container=None,
             bit_rate=None,
             metadata_json=None,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             processed_at=None,
             transcript=None,
             enrichment=None,
@@ -82,8 +82,8 @@ class TestRecordingSchemasSegmentProgress:
             file_size=1000,
             status=RecordingStatus.DONE,
             duration_sec=60.0,
-            created_at=datetime.utcnow(),
-            processed_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            processed_at=datetime.now(timezone.utc),
         )
         assert hasattr(item, "processing_step")
         assert item.processing_step is None
@@ -92,7 +92,7 @@ class TestRecordingSchemasSegmentProgress:
 
     def test_recording_list_item_accepts_processing_step_when_set(self):
         """RecordingListItem accepts processing_step and processing_step_started_at when set."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         item = RecordingListItem(
             id=uuid.uuid4(),
             file_path="/data/calls/t.m4a",
@@ -101,7 +101,7 @@ class TestRecordingSchemasSegmentProgress:
             file_size=1000,
             status=RecordingStatus.PROCESSING,
             duration_sec=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             processed_at=None,
             processing_segments_count=5,
             processing_step="transcribe",
@@ -112,7 +112,7 @@ class TestRecordingSchemasSegmentProgress:
 
     def test_recording_detail_has_processing_step_fields(self):
         """RecordingDetail includes processing_step and processing_step_started_at."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         detail = RecordingDetail(
             id=uuid.uuid4(),
             file_path="/data/calls/t.m4a",
@@ -132,8 +132,8 @@ class TestRecordingSchemasSegmentProgress:
             container=None,
             bit_rate=None,
             metadata_json=None,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             processed_at=None,
             transcript=None,
             enrichment=None,

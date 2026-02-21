@@ -15,3 +15,4 @@ testcontainers>=3.7.0
 # Development Tools
 ruff>=0.1.0
 mypy>=1.8.0
+aiosqlite
