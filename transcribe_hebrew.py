@@ -35,6 +35,9 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+# Default model for Hebrew optimization
+DEFAULT_IVRIT_MODEL = "ivrit-ai/whisper-large-v3-turbo-ct2"
+
 
 def transcribe_with_whisper(
     audio_path: str,
@@ -250,14 +253,10 @@ Recommended for Hebrew:
             print(f"👥 Found {diarization_result.speaker_count} speakers")
 
             # 2. Transcribe
-            # Note: We hardcode ivrit-ai model here as in original script, unless user overrides?
-            # Original script: model_name="ivrit-ai/whisper-large-v3-turbo-ct2"
-            model_name = "ivrit-ai/whisper-large-v3-turbo-ct2"
-
-            print(f"🔄 Transcribing with faster-whisper model: {model_name}...")
+            print(f"🔄 Transcribing with faster-whisper model: {DEFAULT_IVRIT_MODEL}...")
             transcription_result = transcribe_audio(
                 str(audio_path),
-                model_name=model_name,
+                model_name=DEFAULT_IVRIT_MODEL,
                 beam_size=args.beam_size,
                 vad_filter=not args.no_vad,
                 initial_prompt=args.prompt,
@@ -289,7 +288,7 @@ Recommended for Hebrew:
             print(f"🔄 Transcribing with ivrit-ai model...")
             transcription_result = transcribe_audio(
                 str(audio_path),
-                model_name="ivrit-ai/whisper-large-v3-turbo-ct2",
+                model_name=DEFAULT_IVRIT_MODEL,
                 beam_size=args.beam_size,
                 vad_filter=not args.no_vad,
                 initial_prompt=args.prompt,
