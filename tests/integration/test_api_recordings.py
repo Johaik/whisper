@@ -1,7 +1,7 @@
 """Integration tests for the /recordings endpoints."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -212,7 +212,7 @@ class TestGetRecording:
         """Test that GET recording returns processing_step and processing_step_started_at when in progress."""
         from datetime import datetime
 
-        step_started = datetime.utcnow()
+        step_started = datetime.now(timezone.utc)
         recording = Recording(
             file_path="/data/calls/step_test.m4a",
             file_name="step_test.m4a",
@@ -277,7 +277,7 @@ class TestGetRecording:
             file_size=1024,
             status=RecordingStatus.PROCESSING,
             processing_step="diarization",
-            processing_step_started_at=datetime.utcnow(),
+            processing_step_started_at=datetime.now(timezone.utc),
         )
         async_session.add(recording)
         await async_session.commit()

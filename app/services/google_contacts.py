@@ -2,7 +2,6 @@
 
 import logging
 import re
-from functools import lru_cache
 from typing import Optional
 
 from google.auth.transport.requests import Request
@@ -29,15 +28,11 @@ class GoogleContactsService:
 
     def _get_credentials(self) -> Optional[Credentials]:
         """Get valid OAuth credentials."""
-        settings = get_settings()
-
-        if not all([
-            settings.google_client_id,
-            settings.google_client_secret,
-            settings.google_refresh_token,
-        ]):
+        if not self.is_configured():
             logger.warning("Google API credentials not configured")
             return None
+
+        settings = get_settings()
 
         try:
             creds = Credentials(

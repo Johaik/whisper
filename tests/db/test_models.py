@@ -1,7 +1,7 @@
 """Tests for SQLAlchemy ORM models."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.orm import Session
@@ -68,7 +68,7 @@ class TestRecordingModel:
 
     def test_recording_processing_step_persisted(self, db_session: Session):
         """Test that processing_step and processing_step_started_at can be set and persisted."""
-        started = datetime.utcnow()
+        started = datetime.now(timezone.utc)
         recording = Recording(
             file_path="/data/calls/test.m4a",
             file_name="test.m4a",

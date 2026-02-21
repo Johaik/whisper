@@ -89,12 +89,13 @@ async def health_check(
 @router.get("/queue/status", response_model=QueueStatusResponse)
 async def queue_status(
     session: AsyncSessionDep,
+    _: AuthDep,
     threshold: int = Query(default=20, description="Queue threshold"),
 ) -> QueueStatusResponse:
     """Get queue status for batch sync decisions.
     
     Used by the batch-copy script to determine if more files should be copied.
-    No authentication required for simpler integration.
+    Authentication required.
     """
     # Count recordings by status
     queued_count = await session.scalar(

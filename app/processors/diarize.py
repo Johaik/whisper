@@ -4,8 +4,21 @@ import logging
 import os
 import subprocess
 import tempfile
+import warnings
 from dataclasses import dataclass
 from typing import Any
+
+# Suppress annoying pyannote/speechbrain/torch warnings
+warnings.filterwarnings("ignore", message=r"std\(\): degrees of freedom is <= 0")
+warnings.filterwarnings("ignore", message="You are using `torch.load` with `weights_only=False`")
+
+# Quiet down noisy loggers
+logging.getLogger("speechbrain").setLevel(logging.WARNING)
+logging.getLogger("speechbrain.utils.quirks").setLevel(logging.WARNING)
+logging.getLogger("lightning").setLevel(logging.WARNING)
+logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
+logging.getLogger("lightning_fabric").setLevel(logging.WARNING)
+logging.getLogger("pyannote").setLevel(logging.WARNING)
 
 try:
     import torch

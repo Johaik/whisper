@@ -36,7 +36,7 @@ isProject: false
 
 **File:** [app/worker/tasks.py](app/worker/tasks.py)
 
-- **Set/clear step:** At the start of each major block (Step 0–5), set `recording.processing_step = "..."` and `recording.processing_step_started_at = datetime.utcnow()`; commit. In the `finally` that clears segment progress, also set `processing_step = None` and `processing_step_started_at = None`.
+- **Set/clear step:** At the start of each major block (Step 0–5), set `recording.processing_step = "..."` and `recording.processing_step_started_at = datetime.now(timezone.utc)`; commit. In the `finally` that clears segment progress, also set `processing_step = None` and `processing_step_started_at = None`.
 - **Progress callback (transcribe):** Enrich the log line with step name and, when `metadata.duration_sec` is available, elapsed time and **estimated %** (e.g. assume ~~2 segments per minute: `estimated_segments = max(1, int(metadata.duration_sec / 30))`, `pct = min(99, 100 * segments_count // estimated_segments)`). Log e.g. "Transcription progress: 30 segments (~~15% estimated, elapsed 2m)".
 - **Step 2 start log:** Include duration when available, e.g. "Step 2: Transcribing audio... (duration 28m)".
 - **On failure (all exception handlers):** When setting `recording.error_message`, include the current step (and, if in transcribe, segment count), e.g. "Timeout in step transcribe (45 segments): TimeLimitExceeded(1800)" or "Step diarization failed: ".

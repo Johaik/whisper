@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
+import os
 
 # Set dummy environment variables to avoid Pydantic validation errors
 # during test collection when importing modules that instantiate Settings.
@@ -64,6 +65,9 @@ if USE_SQLITE:
 # ============================================
 # Application Imports (Must be after patching)
 # ============================================
+
+# Ensure API_TOKEN is set before importing app.main, which instantiates Settings
+os.environ["API_TOKEN"] = "test-token"
 
 from app.config import Settings, get_settings
 from app.db.models import Base, Enrichment, Recording, RecordingStatus, Transcript

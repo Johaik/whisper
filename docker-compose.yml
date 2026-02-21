@@ -46,7 +46,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CALLS_DIR=/data/calls
       - OUTPUT_DIR=/data/outputs
-      - API_TOKEN=${API_TOKEN:-dev-token-change-me}
+      - API_TOKEN=${API_TOKEN}
       - MODEL_NAME=${MODEL_NAME:-ivrit-ai/whisper-large-v3-turbo-ct2}
       - DEVICE=cpu
       - COMPUTE_TYPE=int8

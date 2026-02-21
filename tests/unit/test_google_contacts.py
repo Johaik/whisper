@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from app.services.google_contacts import (
     GoogleContactsService,
@@ -43,6 +42,38 @@ class TestGoogleContactsService:
 
             service = GoogleContactsService()
             assert service.is_configured() is False
+
+
+class TestGetCredentials:
+    """Tests for _get_credentials method."""
+
+    def test_returns_none_when_not_configured(self) -> None:
+        """Returns None when service is not configured."""
+        with patch("app.services.google_contacts.get_settings") as mock_settings:
+            mock_settings.return_value.google_client_id = None
+
+            service = GoogleContactsService()
+            creds = service._get_credentials()
+            assert creds is None
+
+    def test_returns_creds_when_configured(self) -> None:
+        """Returns credentials when configured."""
+        with patch("app.services.google_contacts.get_settings") as mock_settings, \
+             patch("app.services.google_contacts.Credentials") as mock_creds_cls:
+
+            mock_settings.return_value.google_client_id = "client_id"
+            mock_settings.return_value.google_client_secret = "client_secret"
+            mock_settings.return_value.google_refresh_token = "refresh_token"
+
+            mock_creds = MagicMock()
+            mock_creds.valid = True
+            mock_creds_cls.return_value = mock_creds
+
+            service = GoogleContactsService()
+            creds = service._get_credentials()
+
+            assert creds == mock_creds
+            mock_creds_cls.assert_called_once()
 
 
 class TestNormalizePhoneForComparison:
