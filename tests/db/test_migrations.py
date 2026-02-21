@@ -16,6 +16,11 @@ class TestMigrations:
     """Tests for database migrations."""
 
     @pytest.fixture(autouse=True)
+    def skip_if_sqlite(self, test_settings):
+        if test_settings.database_url_sync.startswith("sqlite"):
+            pytest.skip("Skipping migration tests on SQLite")
+
+    @pytest.fixture(autouse=True)
     def setup_env(self, test_settings):
         """Set environment variable for Alembic migrations."""
         old_value = os.environ.get("DATABASE_URL_SYNC")
