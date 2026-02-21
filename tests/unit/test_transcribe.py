@@ -69,7 +69,8 @@ class TestGetOrLoadModel:
         from app.processors.transcribe import _model_cache
         _model_cache.clear()
 
-        with patch("faster_whisper.WhisperModel") as mock_model_class:
+        with patch("app.processors.transcribe.WhisperModel") as mock_model_class, \
+             patch("app.processors.transcribe.HAS_WHISPER_DEPS", True):
             mock_model_class.return_value = MagicMock()
 
             model = get_or_load_model(
@@ -89,7 +90,8 @@ class TestGetOrLoadModel:
         from app.processors.transcribe import _model_cache
         _model_cache.clear()
 
-        with patch("faster_whisper.WhisperModel") as mock_model_class:
+        with patch("app.processors.transcribe.WhisperModel") as mock_model_class, \
+             patch("app.processors.transcribe.HAS_WHISPER_DEPS", True):
             mock_model_class.return_value = MagicMock()
 
             # Load twice
@@ -128,7 +130,7 @@ class TestTranscribeAudio:
         # Verify model was called with correct language
         mock_whisper_model.transcribe.assert_called_once()
         call_kwargs = mock_whisper_model.transcribe.call_args[1]
-        assert call_kwargs["language"] == "he"
+        assert call_kwargs["language"] is None
 
     @patch("app.processors.transcribe.get_or_load_model")
     def test_transcribe_custom_beam_size(self, mock_get_model, mock_whisper_model):
@@ -180,3 +182,20 @@ class TestTranscribeAudio:
         assert len(result.segments) == 2
         mock_whisper_model.transcribe.assert_called_once()
 
+    @patch("app.processors.transcribe.get_or_load_model")
+    def test_transcribe_custom_language_and_task(self, mock_get_model, mock_whisper_model):
+        """Test that language and task parameters are passed to model.transcribe."""
+        mock_get_model.return_value = mock_whisper_model
+
+        transcribe_audio(
+            "/path/to/audio.wav",
+            language="en",
+            task="translate",
+            initial_prompt="Hello",
+        )
+
+        mock_whisper_model.transcribe.assert_called_once()
+        call_kwargs = mock_whisper_model.transcribe.call_args[1]
+        assert call_kwargs["language"] == "en"
+        assert call_kwargs["task"] == "translate"
+        assert call_kwargs["initial_prompt"] == "Hello"

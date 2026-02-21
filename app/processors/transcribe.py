@@ -9,6 +9,13 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+try:
+    from faster_whisper import WhisperModel
+    HAS_WHISPER_DEPS = True
+except ImportError:
+    WhisperModel = None
+    HAS_WHISPER_DEPS = False
+
 # Module-level model cache for reuse across tasks
 _model_cache: dict[str, Any] = {}
 
@@ -51,9 +58,13 @@ def get_or_load_model(
     Returns:
         The loaded WhisperModel instance
     """
-    from faster_whisper import WhisperModel
-
     settings = get_settings()
+
+    if not HAS_WHISPER_DEPS:
+        raise ImportError(
+            "Transcription dependencies (faster-whisper) are not installed. "
+            "Please install them with 'pip install -r requirements-ml.txt'"
+        )
     model_name = model_name or settings.model_name
     device = device or settings.device
     compute_type = compute_type or settings.compute_type
@@ -81,6 +92,9 @@ def transcribe_audio(
     device: str | None = None,
     compute_type: str | None = None,
     progress_callback: Callable[[int], None] | None = None,
+    language: str | None = None,
+    task: str = "transcribe",
+    initial_prompt: str | None = None,
 ) -> TranscriptionResult:
     """Transcribe audio file using faster-whisper.
 
@@ -92,6 +106,9 @@ def transcribe_audio(
         vad_min_silence_ms: Minimum silence duration for VAD
         device: Device to use (cpu or cuda)
         compute_type: Compute type
+        language: Language code (default: None/auto-detect)
+        task: Task to perform (transcribe or translate)
+        initial_prompt: Optional prompt to guide transcription
 
     Returns:
         TranscriptionResult with full text and segments
@@ -118,10 +135,12 @@ def transcribe_audio(
     # Run transcription
     segments_iter, info = model.transcribe(
         audio_path,
-        language="he",
+        language=language,
+        task=task,
         beam_size=beam_size,
         vad_filter=vad_filter,
         vad_parameters=vad_parameters,
+        initial_prompt=initial_prompt,
     )
 
     # Collect all segments

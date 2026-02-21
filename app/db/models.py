@@ -110,6 +110,14 @@ class Recording(Base):
         back_populates="recording", uselist=False, cascade="all, delete-orphan"
     )
 
+    def format_error_message(self, base_message: str) -> str:
+        """Build error message including current processing step and segment count if available."""
+        step = self.processing_step or "unknown"
+        seg = self.processing_segments_count
+        if seg is not None:
+            return f"Step {step} ({seg} segments): {base_message}"
+        return f"Step {step}: {base_message}"
+
     def __repr__(self) -> str:
         return f"<Recording {self.file_name} ({self.status.value})>"
 

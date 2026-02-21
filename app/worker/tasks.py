@@ -26,32 +26,6 @@ logger = logging.getLogger("app.worker.tasks")
 settings = get_settings()
 
 
-def _error_message_with_step(session: Session, recording_id: str | uuid.UUID, base_message: str) -> str:
-    """Build error message including current processing step and segment count if in transcribe."""
-    # Ensure ID is UUID
-    if isinstance(recording_id, str):
-        try:
-            recording_id = uuid.UUID(recording_id)
-        except ValueError:
-            pass # Let query fail naturally if invalid
-
-    rec = session.query(Recording).filter(Recording.id == recording_id).first()
-    if not rec:
-        return base_message
-
-    # Refresh to ensure we have latest step
-    try:
-        session.refresh(rec)
-    except Exception:
-        pass
-
-    step = rec.processing_step or "unknown"
-    seg = rec.processing_segments_count
-    if seg is not None:
-        return f"Step {step} ({seg} segments): {base_message}"
-    return f"Step {step}: {base_message}"
-
-
 def _set_processing_step(session: Session, recording_id: uuid.UUID, step: str) -> None:
     """Update the current processing step in the database."""
     rec = session.query(Recording).filter(Recording.id == recording_id).first()
@@ -476,16 +450,22 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         # Update recording status based on retry count
         recording = session.query(Recording).filter(Recording.id == rec_uuid).first()
         if recording:
+            # Refresh to ensure we have latest step
+            try:
+                session.refresh(recording)
+            except Exception:
+                pass
+
             retry_count = self.request.retries
             recording.retry_count = retry_count
-            recording.error_message = _error_message_with_step(session, rec_uuid, f"Timeout exceeded: {e}")
+            recording.error_message = recording.format_error_message(f"Timeout exceeded: {e}")
 
             # If we've exceeded max retries, mark as failed
             if retry_count >= settings.task_max_retries:
                 logger.error(f"Max retries ({settings.task_max_retries}) exceeded for {recording_id} due to timeout")
                 recording.status = RecordingStatus.FAILED
-                recording.error_message = _error_message_with_step(
-                    session, rec_uuid, f"Timeout exceeded after {retry_count} retries: {e}"
+                recording.error_message = recording.format_error_message(
+                    f"Timeout exceeded after {retry_count} retries: {e}"
                 )
                 session.commit()
                 # Don't re-raise - mark as failed and stop
@@ -516,9 +496,15 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         # Update recording with error (include step and segments for diagnosis)
         recording = session.query(Recording).filter(Recording.id == rec_uuid).first()
         if recording:
+            # Refresh to ensure we have latest step
+            try:
+                session.refresh(recording)
+            except Exception:
+                pass
+
             retry_count = self.request.retries
             recording.retry_count = retry_count
-            recording.error_message = _error_message_with_step(session, rec_uuid, str(e))
+            recording.error_message = recording.format_error_message(str(e))
             
             # If we've exceeded max retries, mark as failed
             if retry_count >= settings.task_max_retries:
@@ -544,7 +530,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                 heartbeat_thread.join(timeout=5)
             
             # Clear segment and step progress (success or failure)
-            # IMPORTANT: This happens AFTER any error_message_with_step calls in except blocks
+            # IMPORTANT: This happens AFTER any format_error_message calls in except blocks
             rec = session.query(Recording).filter(Recording.id == rec_uuid).first()
             if rec:
                 if rec.processing_segments_count is not None:
@@ -574,22 +560,34 @@ def enqueue_pending_recordings() -> dict[str, Any]:
     stuck_threshold_sec = settings.stuck_processing_threshold_sec
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=stuck_threshold_sec)
     try:
-        # Get active tasks from Celery to avoid resetting tasks that are actually running
-        active_recording_ids = set()
+        # Get active AND reserved tasks from Celery to avoid resetting tasks that are actually running or waiting
+        known_recording_ids = set()
         try:
             inspect = celery_app.control.inspect()
+
+            # Check active tasks (currently being processed)
             active = inspect.active()
             if active:
                 for worker_tasks in active.values():
                     for task in worker_tasks:
                         if task.get("name") == "process_recording" and task.get("args"):
-                            # recording_id is the first arg
                             try:
-                                active_recording_ids.add(task["args"][0])
+                                known_recording_ids.add(str(task["args"][0]))
+                            except (IndexError, KeyError):
+                                pass
+
+            # Check reserved tasks (waiting in worker internal queue)
+            reserved = inspect.reserved()
+            if reserved:
+                for worker_tasks in reserved.values():
+                    for task in worker_tasks:
+                        if task.get("name") == "process_recording" and task.get("args"):
+                            try:
+                                known_recording_ids.add(str(task["args"][0]))
                             except (IndexError, KeyError):
                                 pass
         except Exception as e:
-            logger.warning(f"Could not get active tasks during stuck recovery: {e}")
+            logger.warning(f"Could not get active/reserved tasks during stuck recovery: {e}")
 
         # 1) Stuck recovery: PROCESSING with updated_at too old -> QUEUED or FAILED
         stuck = (
@@ -601,8 +599,8 @@ def enqueue_pending_recordings() -> dict[str, Any]:
         queued_count = 0
         now = datetime.now(timezone.utc)
         for rec in stuck:
-            # If the task is explicitly active in Celery, it's not stuck
-            if str(rec.id) in active_recording_ids:
+            # If the task is explicitly known by Celery (active or reserved), it's not stuck
+            if str(rec.id) in known_recording_ids:
                 continue
 
             # Ensure timezone awareness for comparison
@@ -637,11 +635,19 @@ def enqueue_pending_recordings() -> dict[str, Any]:
             logger.info(f"enqueue_pending_recordings: stuck->failed={failed_count}, stuck->queued={queued_count}")
 
         # 2) Enqueue: QUEUED -> set PROCESSING, then .delay() once per recording
+        # Only enqueue if the Celery queue is not already full to prevent "stuck" false positives
+        MAX_CELERY_PENDING = 5
+        room = max(0, MAX_CELERY_PENDING - len(known_recording_ids))
+
+        if room <= 0:
+            logger.debug(f"Queue full (pending={len(known_recording_ids)}), skipping enqueue")
+            return {"failed": failed_count, "reset_to_queued": queued_count, "enqueued": 0}
+
         to_enqueue = (
             session.query(Recording)
             .filter(Recording.status == RecordingStatus.QUEUED)
             .order_by(Recording.updated_at.asc())
-            .limit(ENQUEUE_BATCH_SIZE)
+            .limit(room)
             .all()
         )
         enqueued = 0
@@ -658,7 +664,7 @@ def enqueue_pending_recordings() -> dict[str, Any]:
             enqueued += 1
 
         if enqueued:
-            logger.info(f"enqueue_pending_recordings: enqueued={enqueued}")
+            logger.info(f"enqueue_pending_recordings: enqueued={enqueued} (queue load: {len(known_recording_ids) + enqueued})")
 
         return {"failed": failed_count, "reset_to_queued": queued_count, "enqueued": enqueued}
     except Exception as e:
@@ -666,4 +672,5 @@ def enqueue_pending_recordings() -> dict[str, Any]:
         logger.exception(f"enqueue_pending_recordings failed: {e}")
         raise
     finally:
+        session.close()
         session.close()

@@ -49,7 +49,9 @@ class TestLoadAudioAsWaveform:
     def test_load_audio_ffmpeg_failure(self, mock_run):
         """Test that ffmpeg failure raises a descriptive RuntimeError."""
         # Setup: Direct load fails
-        with patch("app.processors.diarize.torchaudio.load") as mock_load:
+        with patch("app.processors.diarize.torchaudio") as mock_torchaudio, \
+             patch("app.processors.diarize.HAS_DIARIZE_DEPS", True):
+            mock_load = mock_torchaudio.load
             mock_load.side_effect = [Exception("Direct load failed"), MagicMock()]
 
             # Setup: ffmpeg fails
@@ -72,7 +74,9 @@ class TestLoadAudioAsWaveform:
     def test_load_audio_ffmpeg_success(self, mock_unlink, mock_exists, mock_run):
         """Test that ffmpeg success works correctly."""
         # Setup: Direct load fails
-        with patch("app.processors.diarize.torchaudio.load") as mock_load:
+        with patch("app.processors.diarize.torchaudio") as mock_torchaudio, \
+             patch("app.processors.diarize.HAS_DIARIZE_DEPS", True):
+            mock_load = mock_torchaudio.load
             test_waveform = MagicMock()
             test_waveform.shape = [1, 16000]
             mock_load.side_effect = [Exception("Direct load failed"), (test_waveform, 16000)]
