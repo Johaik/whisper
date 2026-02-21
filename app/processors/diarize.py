@@ -104,11 +104,17 @@ def _load_audio_as_waveform(audio_path: str) -> tuple[Any, int]:
         temp_wav = f.name
     
     try:
-        subprocess.run(
-            ['ffmpeg', '-y', '-i', audio_path, '-ar', '16000', '-ac', '1', '-f', 'wav', temp_wav],
-            capture_output=True,
-            check=True,
-        )
+        try:
+            subprocess.run(
+                ['ffmpeg', '-y', '-i', audio_path, '-ar', '16000', '-ac', '1', '-f', 'wav', temp_wav],
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"ffmpeg conversion failed (exit code {e.returncode}): {e.stderr}")
+            raise RuntimeError(f"Failed to convert audio to WAV via ffmpeg: {e.stderr}") from e
+
         waveform, sample_rate = torchaudio.load(temp_wav)
         return waveform, sample_rate
     finally:
