@@ -149,6 +149,7 @@ services:
     container_name: whisper-migrate
     environment:
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
+      - API_TOKEN=${API_TOKEN}
     command: [ "alembic", "upgrade", "head" ]
     depends_on:
       postgres:
