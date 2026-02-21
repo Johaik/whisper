@@ -36,10 +36,10 @@ A production-ready call recording transcription system that automatically proces
         │                       │
         │                       │
         ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐
-│   Redis         │◀────│   Celery        │
-│   Queue         │     │   Worker        │
-└─────────────────┘     └─────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Redis         │◀────│   Celery        │◀────│   Celery Beat   │
+│   Queue         │     │   Worker        │     │   Scheduler     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
                                │
                 ┌──────────────┼──────────────┐
                 ▼              ▼              ▼
@@ -54,8 +54,10 @@ A production-ready call recording transcription system that automatically proces
 - **Folder Watcher** — Polls a directory for new audio files, queues them for processing
 - **FastAPI API** — REST endpoints for ingestion, recording list, details, and health checks
 - **Celery Worker** — Processes recordings asynchronously (transcription, diarization, analytics)
+- **Celery Beat** — Manages periodic tasks and enqueueing/recovering pending recordings
 - **PostgreSQL** — Stores recordings, transcripts, and enrichment data
 - **Redis** — Message broker for Celery task queue
+- **Monitoring** — Prometheus, Grafana, and Flower for system observability
 
 ---
 
@@ -113,11 +115,12 @@ EOF
 ### 2. Start the Services
 
 ```bash
-# Start all services
-docker-compose up -d
+# Start all services locally (via Ansible orchestrating Docker Compose)
+make dev
 
-# Run database migrations
-docker-compose run --rm migrate
+# Database migrations are run automatically by the 'migrate' container.
+# View logs from all services to verify launch success
+make logs
 
 # Check service health
 curl http://localhost:8000/api/v1/health
@@ -247,44 +250,39 @@ Configure via environment variables or `.env` file:
 
 ## 🧪 Development
 
+### Mandatory Workflow
+
+All developers and agents **MUST** follow the unified workflow described in [`docs/dev/workflow.md`](docs/dev/workflow.md). Key rules include starting with reproduction tests for bugs, specification tests for features, and ensuring all tests and linters pass locally.
+
 ### Local Setup
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# Create virtual environment and install dependencies
+make venv
+source .venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Start local infrastructure and application services via Makefile
+make dev
 
-# Start infrastructure
-docker-compose up -d postgres redis
+# View all local container logs
+make logs
 
-# Run migrations
-alembic upgrade head
-
-# Start API server
-uvicorn app.main:app --reload
-
-# Start worker (in another terminal)
-celery -A app.worker.celery_app worker --loglevel=info
-
-# Start watcher (in another terminal)
-python -m app.watcher.folder_watcher
+# Stop all local services
+make stop
 ```
 
 ### Running Tests
 
 ```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app --cov-report=html
+# Run all tests (uses .venv automatically if present)
+make test
 
 # Run specific test categories
-pytest tests/unit/          # Unit tests only
-pytest tests/integration/   # Integration tests only
+make test-unit
+make test-integration
+
+# Manual pytest runs inside activated venv
+pytest --cov=app --cov-report=html
 ```
 
 ### Project Structure
