@@ -155,7 +155,20 @@ async def ingest_folder(
 ) -> IngestResponse:
     """Scan a folder for audio files and queue them for processing."""
     folder = request.folder or settings.calls_dir
-    folder_path = Path(folder)
+    folder_path = Path(folder).resolve()
+
+    # Security check: Ensure folder is within allowed directories
+    allowed_paths = [Path(settings.calls_dir).resolve()]
+    if settings.source_dir:
+        allowed_paths.append(Path(settings.source_dir).resolve())
+
+    is_allowed = any(folder_path.is_relative_to(allowed) for allowed in allowed_paths)
+
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Folder must be within allowed directories",
+        )
 
     if not folder_path.exists():
         raise HTTPException(
