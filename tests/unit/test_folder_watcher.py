@@ -168,8 +168,8 @@ class TestCleanStaleCache:
         assert "/path/to/file3.m4a" not in watcher._last_sizes
 
 
-class TestProcessFile:
-    """Tests for file processing."""
+class TestProcessBatch:
+    """Tests for batch file processing."""
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
     @patch("app.watcher.folder_watcher.compute_file_hash")
@@ -179,7 +179,7 @@ class TestProcessFile:
         mock_session_class: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """New file creates DB record with QUEUED status (periodic enqueue_pending_recordings will enqueue)."""
+        """New file creates DB record with QUEUED status."""
         test_file = tmp_path / "test.m4a"
         test_file.write_bytes(b"test content")
 
@@ -187,14 +187,15 @@ class TestProcessFile:
 
         # Mock session
         mock_session = MagicMock()
-        mock_session.query.return_value.filter.return_value.first.return_value = None
+        # Mock query results for bulk check (return empty lists => no existing files)
+        mock_session.query.return_value.filter.return_value.all.return_value = []
         mock_session_class.return_value = mock_session
 
         watcher = FolderWatcher(folder=tmp_path)
-        result = watcher.process_file(test_file)
+        result = watcher.process_batch([test_file])
 
-        assert result is True
-        mock_session.add.assert_called_once()
+        assert result == 1
+        mock_session.add_all.assert_called_once()
         mock_session.commit.assert_called_once()
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
@@ -205,23 +206,25 @@ class TestProcessFile:
         mock_session_class: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """New file creates recording with status QUEUED for periodic enqueuer."""
+        """New file creates recording with status QUEUED."""
         test_file = tmp_path / "test.m4a"
         test_file.write_bytes(b"test content")
 
         mock_hash.return_value = "abc123hash"
 
         mock_session = MagicMock()
-        mock_session.query.return_value.filter.return_value.first.return_value = None
+        mock_session.query.return_value.filter.return_value.all.return_value = []
         mock_session_class.return_value = mock_session
 
         watcher = FolderWatcher(folder=tmp_path)
-        watcher.process_file(test_file)
+        watcher.process_batch([test_file])
 
-        call_args = mock_session.add.call_args
+        call_args = mock_session.add_all.call_args
         assert call_args is not None
-        recording = call_args[0][0]
-        assert recording.status == RecordingStatus.QUEUED
+        # add_all takes a list
+        recordings = call_args[0][0]
+        assert len(recordings) == 1
+        assert recordings[0].status == RecordingStatus.QUEUED
 
     @patch("app.watcher.folder_watcher.SyncSessionLocal")
     @patch("app.watcher.folder_watcher.compute_file_hash")
@@ -239,16 +242,58 @@ class TestProcessFile:
 
         # Mock session with existing record
         mock_session = MagicMock()
-        mock_existing = MagicMock()
-        mock_existing.id = "existing-uuid"
-        mock_session.query.return_value.filter.return_value.first.return_value = mock_existing
+
+        # We make the mock return a list with an object having file_hash
+        mock_existing_hash = MagicMock()
+        mock_existing_hash.file_hash = "abc123hash"
+
+        # For the first query (hashes) return match, for second (names) return empty
+        # or just make it return the match for the hash query
+
+        # We need to distinguish between the two queries (hash and name)
+        # However, mock chaining is tricky.
+        # Simpler: just return a list containing the hash for any query.
+
+        mock_session.query.return_value.filter.return_value.all.return_value = [mock_existing_hash]
+
         mock_session_class.return_value = mock_session
 
         watcher = FolderWatcher(folder=tmp_path)
-        result = watcher.process_file(test_file)
+        result = watcher.process_batch([test_file])
 
-        assert result is False
-        mock_session.add.assert_not_called()
+        assert result == 0
+        mock_session.add_all.assert_not_called()
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_skips_intra_batch_duplicates(
+        self,
+        mock_hash: MagicMock,
+        mock_session_class: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Duplicates within the same batch are skipped."""
+        file1 = tmp_path / "file1.m4a"
+        file1.write_bytes(b"content")
+        file2 = tmp_path / "file2.m4a"
+        file2.write_bytes(b"content")  # Same content -> same hash
+
+        mock_hash.return_value = "samehash"
+
+        mock_session = MagicMock()
+        mock_session.query.return_value.filter.return_value.all.return_value = []
+        mock_session_class.return_value = mock_session
+
+        watcher = FolderWatcher(folder=tmp_path)
+        # Process both files in one batch
+        result = watcher.process_batch([file1, file2])
+
+        assert result == 1
+
+        call_args = mock_session.add_all.call_args
+        assert call_args is not None
+        recordings = call_args[0][0]
+        assert len(recordings) == 1
 
 
 class TestPollOnce:
