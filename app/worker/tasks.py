@@ -673,9 +673,4 @@ def enqueue_pending_recordings() -> dict[str, Any]:
         raise
     finally:
         session.close()
-    except Exception as e:
-        session.rollback()
-        logger.exception(f"enqueue_pending_recordings failed: {e}")
-        raise
-    finally:
         session.close()
