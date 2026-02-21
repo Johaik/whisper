@@ -273,7 +273,12 @@ class TestTimestamps:
 
         after = datetime.now(timezone.utc)
 
-        assert before <= recording.created_at <= after
+        # Ensure timezone awareness for SQLite tests
+        created_at = recording.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        assert before <= created_at <= after
 
     def test_updated_at_changes_on_update(self, db_session: Session):
         """Test that updated_at changes when record is updated."""
@@ -325,5 +330,10 @@ class TestTimestamps:
         recording.status = RecordingStatus.DONE
         db_session.commit()
 
-        assert recording.processed_at == now
+        # Ensure timezone awareness for SQLite tests
+        processed_at = recording.processed_at
+        if processed_at and processed_at.tzinfo is None:
+            processed_at = processed_at.replace(tzinfo=timezone.utc)
+
+        assert processed_at == now
 

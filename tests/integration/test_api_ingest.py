@@ -32,21 +32,23 @@ class TestIngestEndpoint:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_ingest_nonexistent_folder(self, async_client, auth_headers):
+    async def test_ingest_nonexistent_folder(self, async_client, auth_headers, fixtures_dir):
         """Test ingest with nonexistent folder returns 404."""
+        # Ensure path is within allowed directory to pass security check, but nonexistent
+        nonexistent = fixtures_dir / "nonexistent"
         response = await async_client.post(
             "/api/v1/ingest",
-            json={"folder": "/nonexistent/folder"},
+            json={"folder": str(nonexistent)},
             headers=auth_headers,
         )
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_ingest_discovers_audio_files(self, async_client, auth_headers, async_session):
+    async def test_ingest_discovers_audio_files(self, async_client, auth_headers, async_session, fixtures_dir):
         """Test that ingest discovers audio files in folder."""
-        # Create a temp directory with audio files
-        with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a temp directory with audio files inside fixtures_dir
+        with tempfile.TemporaryDirectory(dir=fixtures_dir) as tmpdir:
             # Create test audio files
             Path(tmpdir, "test1.m4a").write_bytes(b"fake audio 1")
             Path(tmpdir, "test2.wav").write_bytes(b"fake audio 2")
@@ -64,9 +66,9 @@ class TestIngestEndpoint:
             assert data["queued"] == 2
 
     @pytest.mark.asyncio
-    async def test_ingest_skips_already_processed(self, async_client, auth_headers, async_session):
+    async def test_ingest_skips_already_processed(self, async_client, auth_headers, async_session, fixtures_dir):
         """Test that ingest skips already processed files."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=fixtures_dir) as tmpdir:
             # Create test file
             test_file = Path(tmpdir, "test.m4a")
             test_file.write_bytes(b"fake audio content")
@@ -91,9 +93,9 @@ class TestIngestEndpoint:
             assert response2.json()["skipped"] == 1
 
     @pytest.mark.asyncio
-    async def test_ingest_reprocesses_failed(self, async_client, auth_headers, async_session):
+    async def test_ingest_reprocesses_failed(self, async_client, auth_headers, async_session, fixtures_dir):
         """Test that ingest requeues failed recordings."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=fixtures_dir) as tmpdir:
             test_file = Path(tmpdir, "test.m4a")
             test_file.write_bytes(b"fake audio")
 
@@ -120,9 +122,9 @@ class TestIngestEndpoint:
             assert response.json()["queued"] == 1
 
     @pytest.mark.asyncio
-    async def test_ingest_force_reprocess(self, async_client, auth_headers, async_session):
+    async def test_ingest_force_reprocess(self, async_client, auth_headers, async_session, fixtures_dir):
         """Test force_reprocess flag requeues all files."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=fixtures_dir) as tmpdir:
             test_file = Path(tmpdir, "test.m4a")
             test_file.write_bytes(b"fake audio")
 

@@ -5,10 +5,10 @@ from sqlalchemy import select, func
 from app.db.models import Recording, RecordingStatus
 
 @pytest.mark.asyncio
-async def test_ingest_bulk_behavior(async_client, auth_headers, async_session):
+async def test_ingest_bulk_behavior(async_client, auth_headers, async_session, fixtures_dir):
     """Test bulk ingest behavior with mixed new, existing, and failed files."""
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=fixtures_dir) as tmpdir:
         tmp_path = Path(tmpdir)
 
         # Create 20 files
