@@ -104,12 +104,11 @@ Call recording +15551234567_200605_114902.m4a
 git clone <your-repo-url>
 cd whisper
 
-# Create environment file
-cat > .env << EOF
-API_TOKEN=your-secure-api-token
-HUGGINGFACE_TOKEN=hf_your_huggingface_token
-DIARIZATION_ENABLED=true
-EOF
+# Create environment file from example
+cp .env.example .env
+
+# Edit .env to set required variables (especially DATABASE_URL if running locally)
+# For Docker Compose usage, the defaults in docker-compose.yml will override these.
 ```
 
 ### 2. Start the Services
@@ -210,7 +209,8 @@ Configure via environment variables or `.env` file:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `API_TOKEN` | `dev-token-change-me` | API authentication token |
-| `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL connection string |
+| `DATABASE_URL` | **Required** | PostgreSQL connection string |
+| `DATABASE_URL_SYNC` | **Required** | Sync PostgreSQL connection string |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
 | `CALLS_DIR` | `/data/calls` | Directory to watch for recordings |
 
