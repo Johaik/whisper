@@ -217,11 +217,30 @@ def assign_speakers_to_transcript(
 
     result: list[TranscriptSegment] = []
 
+    # Optimizing to O(N+M) using sliding window
+    d_idx = 0
+    num_d_segments = len(diarization.segments)
+
     for tseg in transcript_segments:
         best_speaker = None
         best_overlap = 0.0
 
-        for dseg in diarization.segments:
+        # Advance d_idx to skip segments that end before current tseg starts.
+        # Since tseg.start increases monotonically, we never need to check
+        # these skipped segments again for subsequent transcript segments.
+        while d_idx < num_d_segments and diarization.segments[d_idx].end < tseg.start:
+            d_idx += 1
+
+        # Check segments starting from d_idx
+        current_idx = d_idx
+        while current_idx < num_d_segments:
+            dseg = diarization.segments[current_idx]
+
+            # Optimization: if dseg starts after tseg ends, no further overlap possible
+            # for this tseg. Since dseg.start is sorted, subsequent dsegs also start later.
+            if dseg.start > tseg.end:
+                break
+
             # Calculate overlap
             overlap_start = max(tseg.start, dseg.start)
             overlap_end = min(tseg.end, dseg.end)
@@ -230,6 +249,8 @@ def assign_speakers_to_transcript(
             if overlap > best_overlap:
                 best_overlap = overlap
                 best_speaker = dseg.speaker
+
+            current_idx += 1
 
         result.append(
             TranscriptSegment(
