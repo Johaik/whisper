@@ -189,3 +189,37 @@ class TestAssignSpeakersToTranscript:
         assert result[0].start == 0.0
         assert result[0].end == 2.0
 
+    def test_assigns_speakers_correctly_large_input(self):
+        """Test that speaker assignment works correctly with larger inputs (verifying optimization)."""
+        # Create 100 transcript segments
+        transcript_segments = []
+        for i in range(100):
+            transcript_segments.append(
+                TranscriptSegment(start=float(i), end=float(i + 1), text=f"Text {i}")
+            )
+
+        # Create 50 diarization segments (covering every 2 transcript segments)
+        diarization_segments = []
+        for i in range(50):
+            diarization_segments.append(
+                DiarizationSegment(start=float(i * 2), end=float(i * 2 + 2), speaker=f"SPEAKER_{i % 2}")
+            )
+
+        diarization = DiarizationResult(
+            segments=diarization_segments,
+            speaker_count=2,
+            speakers=["SPEAKER_0", "SPEAKER_1"],
+        )
+
+        result = assign_speakers_to_transcript(transcript_segments, diarization)
+
+        assert len(result) == 100
+        # Verify first few assignments
+        assert result[0].speaker == "SPEAKER_0"  # 0.0-1.0 overlaps with 0.0-2.0 (SPEAKER_0)
+        assert result[1].speaker == "SPEAKER_0"  # 1.0-2.0 overlaps with 0.0-2.0 (SPEAKER_0)
+        assert result[2].speaker == "SPEAKER_1"  # 2.0-3.0 overlaps with 2.0-4.0 (SPEAKER_1)
+        assert result[3].speaker == "SPEAKER_1"  # 3.0-4.0 overlaps with 2.0-4.0 (SPEAKER_1)
+
+        # Verify last few assignments
+        assert result[98].speaker == "SPEAKER_1" # 98.0-99.0 overlaps with 98.0-100.0 (SPEAKER_1)
+        assert result[99].speaker == "SPEAKER_1" # 99.0-100.0 overlaps with 98.0-100.0 (SPEAKER_1)
