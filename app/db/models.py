@@ -2,7 +2,7 @@
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import (
@@ -73,7 +73,8 @@ class Recording(Base):
     processing_segments_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Current pipeline step (only set while status=processing); e.g. parse_metadata, transcribe, diarization
     processing_step: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    processing_step_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Standardize on UTC
+    processing_step_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Audio metadata (populated by ffprobe)
     duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -89,16 +90,17 @@ class Recording(Base):
     # Caller metadata (parsed from filename)
     phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     caller_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    call_datetime: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    call_datetime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
-    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
     # Relationships
     transcript: Mapped["Transcript | None"] = relationship(
@@ -146,7 +148,7 @@ class Transcript(Base):
     transcript_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
     # Relationship
@@ -196,7 +198,7 @@ class Enrichment(Base):
     analytics_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
     # Relationship

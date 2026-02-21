@@ -175,11 +175,11 @@ async def ingest_folder(
     skipped = 0
     errors: list[str] = []
 
-    # Find all audio files
-    audio_files: list[Path] = []
-    for ext in settings.audio_extensions:
-        audio_files.extend(folder_path.glob(f"*{ext}"))
-        audio_files.extend(folder_path.glob(f"*{ext.upper()}"))
+    # Find all audio files using iterdir for robust Hebrew filename support
+    audio_files: list[Path] = [
+        f for f in folder_path.iterdir()
+        if f.is_file() and f.suffix.lower() in settings.audio_extensions
+    ]
 
     logger.info(f"Found {len(audio_files)} audio files")
 
