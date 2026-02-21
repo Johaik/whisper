@@ -1,0 +1,84 @@
+---
+- name: Diagnose Windows OS Crash
+  hosts: windows
+  gather_facts: yes
+
+  tasks:
+    - name: Gather OS and hardware information
+      ansible.windows.win_powershell:
+        script: |
+          Write-Output "=== SYSTEM INFO ==="
+          $os = Get-CimInstance Win32_OperatingSystem
+          Write-Output ("OS: {0} (Build {1})" -f $os.Caption, $os.BuildNumber)
+          Write-Output ("Last Boot Time: {0}" -f $os.LastBootUpTime)
+          Write-Output ("Uptime: {0}" -f ((Get-Date) - $os.LastBootUpTime))
+          
+          Write-Output "`n=== MEMORY USAGE ==="
+          $mem = Get-CimInstance Win32_OperatingSystem
+          $totalMem = [math]::Round($mem.TotalVisibleMemorySize / 1MB, 2)
+          $freeMem = [math]::Round($mem.FreePhysicalMemory / 1MB, 2)
+          Write-Output ("Total RAM: {0} GB" -f $totalMem)
+          Write-Output ("Free RAM:  {0} GB" -f $freeMem)
+          Write-Output ("Used RAM:  {0} %" -f [math]::Round((($totalMem - $freeMem) / $totalMem) * 100, 2))
+          
+          Write-Output "`n=== DISK SPACE ==="
+          Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
+            $totalSize = [math]::Round($_.Size / 1GB, 2)
+            $freeSpace = [math]::Round($_.FreeSpace / 1GB, 2)
+            Write-Output ("Drive {0}: {1} GB free of {2} GB ({3} % free)" -f $_.DeviceID, $freeSpace, $totalSize, [math]::Round(($freeSpace / $totalSize) * 100, 2))
+          }
+          
+          Write-Output "`n=== RECENT SYSTEM ERRORS (Last 4h) ==="
+          $lastBoot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+          $events = Get-WinEvent -FilterHashtable @{
+            LogName = 'System'
+            Level = 1,2 # Critical, Error
+            StartTime = $lastBoot.AddMinutes(-30)
+          } -ErrorAction SilentlyContinue
+          
+          if ($events) {
+            $events | Select-Object TimeCreated, Id, Message -First 15 | ForEach-Object {
+              Write-Output ("[{0}] ID {1}: {2}" -f $_.TimeCreated, $_.Id, $_.Message.Trim())
+            }
+          } else {
+            Write-Output "No system errors found around last boot."
+          }
+
+          Write-Output "`n=== WINDOWS UPDATE EVENTS (Last 24h) ==="
+          $updateEvents = Get-WinEvent -FilterHashtable @{
+            LogName = 'System'
+            ProviderName = 'Microsoft-Windows-WindowsUpdateClient'
+            StartTime = (Get-Date).AddDays(-1)
+          } -ErrorAction SilentlyContinue
+          
+          if ($updateEvents) {
+            $updateEvents | Select-Object TimeCreated, Id, Message -First 10 | ForEach-Object {
+              Write-Output ("[{0}] ID {1}: {2}" -f $_.TimeCreated, $_.Id, $_.Message.Trim())
+            }
+          } else {
+            Write-Output "No Windows Update events found."
+          }
+          
+          Write-Output "`n=== PHYSICAL DISK MAPPING ==="
+          Get-CimInstance Win32_DiskDrive | ForEach-Object {
+            $drive = $_
+            $partitions = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskDrive.DeviceID='$($drive.DeviceID)'} WHERE AssocClass = Win32_DiskDriveToDiskPartition"
+            $logical = $partitions | ForEach-Object { Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($_.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" }
+            Write-Output ("Disk {0} ({1}): {2} GB - Model: {3} - Status: {4}" -f $drive.Index, ($logical.DeviceID -join ", "), [math]::Round($drive.Size / 1GB, 2), $drive.Model, $drive.Status)
+          }
+
+          Write-Output "`n=== DETAILED DISK HEALTH (StorageReliabilityCounter) ==="
+          Get-CimInstance -Namespace root/wmi -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Output ("PredictFailure for {0}: {1} (Reason: {2})" -f $_.InstanceName, $_.PredictFailure, $_.Reason)
+          }
+
+          
+          Write-Output "`n=== TOP PROCESSES BY MEMORY ==="
+          Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 10 | ForEach-Object {
+            Write-Output ("{0,-20} : {1,8} MB" -f $_.ProcessName, [math]::Round($_.WorkingSet64 / 1MB, 2))
+          }
+      register: os_diag
+
+    - name: Display OS diagnosis
+      ansible.builtin.debug:
+        msg: "{{ os_diag.output }}"
