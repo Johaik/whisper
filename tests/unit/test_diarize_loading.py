@@ -1,5 +1,6 @@
 """Unit tests for audio loading in diarization processor."""
 
+import os
 import subprocess
 import sys
 from unittest.mock import MagicMock, patch
@@ -35,6 +36,9 @@ mock_modules["torch"].zeros.return_value = mock_waveform
 for mod_name, mock_obj in mock_modules.items():
     sys.modules[mod_name] = mock_obj
 
+import importlib
+import app.processors.diarize
+importlib.reload(app.processors.diarize)
 from app.processors.diarize import _load_audio_as_waveform
 
 
@@ -84,4 +88,12 @@ class TestLoadAudioAsWaveform:
             assert waveform == test_waveform
             assert sample_rate == 16000
             mock_run.assert_called_once()
+
+            # Verify absolute path is used for input file
+            call_args = mock_run.call_args[0][0]
+            assert "-i" in call_args
+            input_idx = call_args.index("-i") + 1
+            input_path = call_args[input_idx]
+            assert os.path.isabs(input_path), f"Input path '{input_path}' should be absolute"
+
             mock_unlink.assert_called_once()

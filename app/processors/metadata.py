@@ -66,13 +66,14 @@ def extract_metadata(audio_path: str) -> AudioMetadata:
     logger.info(f"Extracting metadata from: {audio_path}")
 
     # Run ffprobe
+    # Use absolute path to prevent argument injection if filename starts with '-'
     cmd = [
         "ffprobe",
         "-v", "quiet",
         "-print_format", "json",
         "-show_format",
         "-show_streams",
-        audio_path,
+        str(path.absolute()),
     ]
 
     try:

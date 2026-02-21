@@ -1,6 +1,7 @@
 """Unit tests for the metadata processor."""
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -64,6 +65,11 @@ class TestExtractMetadata:
         result = extract_metadata(str(temp_audio_file))
 
         assert result.duration_sec == pytest.approx(60.123456)
+
+        # Verify absolute path is used
+        cmd = mock_run.call_args[0][0]
+        input_path = cmd[-1]
+        assert os.path.isabs(input_path), f"Input path '{input_path}' should be absolute"
 
     @patch("app.processors.metadata.subprocess.run")
     def test_extracts_audio_stream_info(self, mock_run, temp_audio_file, mock_ffprobe_output):

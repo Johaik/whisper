@@ -135,8 +135,10 @@ def _load_audio_as_waveform(audio_path: str) -> tuple[Any, int]:
     
     try:
         try:
+            # Use absolute path to prevent argument injection if filename starts with '-'
+            abs_audio_path = os.path.abspath(audio_path)
             subprocess.run(
-                ['ffmpeg', '-y', '-i', audio_path, '-ar', '16000', '-ac', '1', '-f', 'wav', temp_wav],
+                ['ffmpeg', '-y', '-i', abs_audio_path, '-ar', '16000', '-ac', '1', '-f', 'wav', temp_wav],
                 capture_output=True,
                 check=True,
                 text=True,
