@@ -232,60 +232,98 @@ class FolderWatcher:
             del self._last_sizes[key]
             logger.debug(f"Removed stale cache entry: {key}")
 
-    def process_file(self, file_path: Path) -> bool:
+    def process_batch(self, file_paths: list[Path]) -> int:
         """
-        Process a single file: check if new and queue for transcription.
+        Process a batch of files: check if new and queue for transcription.
 
         Args:
-            file_path: Path to the audio file
+            file_paths: List of file paths to process
 
         Returns:
-            True if file was queued, False otherwise
+            Number of files queued
         """
-        file_hash = compute_file_hash(str(file_path))
+        if not file_paths:
+            return 0
+
+        # 1. Compute hashes for all files
+        # Map file_path -> (hash, size)
+        file_info: dict[Path, dict] = {}
+        for fp in file_paths:
+            try:
+                h = compute_file_hash(str(fp))
+                file_info[fp] = {"hash": h, "size": fp.stat().st_size}
+            except Exception as e:
+                logger.error(f"Error preparing file {fp}: {e}")
+                continue
+
+        if not file_info:
+            return 0
+
+        all_hashes = [info["hash"] for info in file_info.values()]
+        all_names = [fp.name for fp in file_info.keys()]
 
         session = SyncSessionLocal()
+        queued_count = 0
         try:
-            # Check if already in database by hash
-            existing_hash = session.query(Recording).filter(
-                Recording.file_hash == file_hash
-            ).first()
+            # 2. Check existing recordings
+            # Chunk queries to avoid limit
+            existing_hashes = set()
+            existing_names = set()
 
-            if existing_hash:
-                logger.debug(f"File {file_path.name} already in database by hash (id={existing_hash.id})")
-                return False
+            chunk_size = 500
+            for i in range(0, len(all_hashes), chunk_size):
+                chunk = all_hashes[i:i+chunk_size]
+                if chunk:
+                    res = session.query(Recording.file_hash).filter(Recording.file_hash.in_(chunk)).all()
+                    existing_hashes.update(r.file_hash for r in res)
 
-            # Check if already in database by filename (to prevent duplicates if file content changes slightly)
-            existing_name = session.query(Recording).filter(
-                Recording.file_name == file_path.name
-            ).first()
+            for i in range(0, len(all_names), chunk_size):
+                chunk = all_names[i:i+chunk_size]
+                if chunk:
+                    res = session.query(Recording.file_name).filter(Recording.file_name.in_(chunk)).all()
+                    existing_names.update(r.file_name for r in res)
 
-            if existing_name:
-                logger.debug(f"File {file_path.name} already in database by name (id={existing_name.id}, status={existing_name.status.value})")
-                return False
+            # 3. Filter and Add
+            to_add = []
+            for fp, info in file_info.items():
+                if info["hash"] in existing_hashes:
+                    logger.debug(f"File {fp.name} already in database by hash")
+                    continue
+                if fp.name in existing_names:
+                    logger.debug(f"File {fp.name} already in database by name")
+                    continue
 
-            # Create new recording
-            recording = Recording(
-                file_path=str(file_path.absolute()),
-                file_name=file_path.name,
-                file_hash=file_hash,
-                file_size=file_path.stat().st_size,
-                status=RecordingStatus.QUEUED,
-            )
-            session.add(recording)
-            session.commit()
-            session.refresh(recording)
+                recording = Recording(
+                    file_path=str(fp.absolute()),
+                    file_name=fp.name,
+                    file_hash=info["hash"],
+                    file_size=info["size"],
+                    status=RecordingStatus.QUEUED,
+                )
+                to_add.append(recording)
 
-            # Periodic enqueue_pending_recordings will enqueue this (status=QUEUED)
-            logger.info(f"Queued new file: {file_path.name} (id={recording.id})")
-            return True
+                # Update sets for intra-batch deduplication
+                existing_hashes.add(info["hash"])
+                existing_names.add(fp.name)
+
+            if to_add:
+                session.add_all(to_add)
+                session.commit()
+                # session.refresh() is expensive for list, avoiding unless needed.
+                # We don't use the IDs immediately here, just counting.
+                # But logging IDs is nice.
+                for r in to_add:
+                     logger.info(f"Queued new file: {r.file_name} (id={r.id})")
+                queued_count = len(to_add)
 
         except Exception as e:
-            logger.error(f"Error processing file {file_path}: {e}")
+            logger.error(f"Error processing batch: {e}")
             session.rollback()
-            return False
+            return 0
         finally:
             session.close()
+
+        return queued_count
 
     def poll_once(self) -> dict[str, Any]:
         """
@@ -316,16 +354,18 @@ class FolderWatcher:
         current_files = {str(f) for f in audio_files}
         self.clean_stale_cache(current_files)
 
+        ready_files = []
         for file_path in audio_files:
             if not self.is_file_ready(file_path):
                 continue
 
             stats["ready"] += 1
+            ready_files.append(file_path)
 
-            if self.process_file(file_path):
-                stats["queued"] += 1
-            else:
-                stats["skipped"] += 1
+        if ready_files:
+            queued = self.process_batch(ready_files)
+            stats["queued"] = queued
+            stats["skipped"] = len(ready_files) - queued
 
         return stats
 
