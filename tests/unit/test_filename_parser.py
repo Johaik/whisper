@@ -89,6 +89,59 @@ class TestParseRecordingFilename:
         assert result.phone_number is None
 
 
+class TestContactNameExtraction:
+    """Tests for contact name extraction from filename."""
+
+    def test_simple_contact_name(self) -> None:
+        """Parse simple contact name."""
+        filename = "Call recording John Doe_200605_114902.m4a"
+        result = parse_recording_filename(filename)
+
+        assert result.caller_name == "John Doe"
+        assert result.phone_number is None
+        assert result.raw_phone is None
+        assert result.call_datetime == datetime(2020, 6, 5, 11, 49, 2)
+
+    def test_hebrew_contact_name(self) -> None:
+        """Parse Hebrew contact name."""
+        filename = "Call recording ישראל ישראלי_200605_114902.m4a"
+        result = parse_recording_filename(filename)
+
+        assert result.caller_name == "ישראל ישראלי"
+        assert result.phone_number is None
+        assert result.call_datetime == datetime(2020, 6, 5, 11, 49, 2)
+
+    def test_mixed_name_with_digits(self) -> None:
+        """Parse name containing digits but not a phone number."""
+        filename = "Call recording Mom 2_200605_114902.m4a"
+        result = parse_recording_filename(filename)
+
+        assert result.caller_name == "Mom 2"
+        assert result.phone_number is None
+        assert result.call_datetime == datetime(2020, 6, 5, 11, 49, 2)
+
+    def test_mixed_identifier_looks_like_phone(self) -> None:
+        """Identifier looking like phone is treated as phone."""
+        # This confirms current behavior where dense digits override letters
+        filename = "Call recording A1 5551234_200605_114902.m4a"
+        result = parse_recording_filename(filename)
+
+        # "A1 5551234" has 8 digits and 2 letters. 8/10 = 0.8 > 0.5.
+        # It is treated as a phone number.
+        assert result.phone_number == "15551234"
+        assert result.caller_name is None
+
+    def test_mixed_identifier_looks_like_name(self) -> None:
+        """Identifier with many letters is treated as name."""
+        filename = "Call recording Office 5551234_200605_114902.m4a"
+        result = parse_recording_filename(filename)
+
+        # "Office 5551234" has 7 digits and 6 letters + space. 7/14 = 0.5.
+        # Not > 0.5, so it checks for letters -> True. Treated as name.
+        assert result.caller_name == "Office 5551234"
+        assert result.phone_number is None
+
+
 class TestNormalizePhoneNumber:
     """Tests for phone number normalization."""
 
@@ -170,4 +223,3 @@ class TestCallerMetadataDataclass:
         assert metadata.phone_number == "+1234567890"
         assert metadata.call_datetime == dt
         assert metadata.raw_phone == "+1 234 567 890"
-
