@@ -237,6 +237,7 @@
             [string]$Dest = "{{ win_app_dir }}\Calls",
             [string]$CopiedLog = "{{ win_app_dir }}\copied-files.txt",
             [string]$ApiUrl = "http://localhost:8000",
+            [string]$EnvFile = "{{ win_app_dir }}\.env",
             [switch]$Silent = $false,
             [switch]$Force = $false
           )
@@ -245,14 +246,30 @@
             $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
             if (-not $Silent) { Write-Host "[$timestamp] $msg" -ForegroundColor $color }
           }
+
+          function Get-EnvVar([string]$Key) {
+            if (Test-Path $EnvFile) {
+              $line = Get-Content $EnvFile | Where-Object { $_ -match "^$Key=" } | Select-Object -First 1
+              if ($line) {
+                return $line.Split("=", 2)[1].Trim()
+              }
+            }
+            return $null
+          }
           
           Log "=== Batch Copy Script ===" Cyan
           
           # Check if API is available and queue can accept more
           if (-not $Force) {
             try {
+              $apiToken = Get-EnvVar "API_TOKEN"
+              $headers = @{}
+              if ($apiToken) {
+                $headers["Authorization"] = "Bearer $apiToken"
+              }
+
               $queueUrl = "$ApiUrl/api/v1/queue/status?threshold=$BatchSize"
-              $response = Invoke-RestMethod -Uri $queueUrl -Method Get -TimeoutSec 5
+              $response = Invoke-RestMethod -Uri $queueUrl -Method Get -Headers $headers -TimeoutSec 5
               
               Log "Queue status: queued=$($response.queued), processing=$($response.processing), active=$($response.active_tasks)"
               
