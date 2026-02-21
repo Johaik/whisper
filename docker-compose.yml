@@ -77,6 +77,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
       - REDIS_URL=redis://redis:6379/0
+      - API_TOKEN=${API_TOKEN}
       - CALLS_DIR=/data/calls
       - OUTPUT_DIR=/data/outputs
       # Best accuracy settings for Hebrew transcription
@@ -110,8 +111,10 @@ services:
     restart: unless-stopped
     command: [ "celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info" ]
     environment:
+      - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
       - REDIS_URL=redis://redis:6379/0
+      - API_TOKEN=${API_TOKEN}
       - TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-}
     depends_on:
       postgres:
@@ -128,6 +131,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
       - REDIS_URL=redis://redis:6379/0
+      - API_TOKEN=${API_TOKEN}
       - CALLS_DIR=/data/calls
       - WATCHER_POLL_INTERVAL=${WATCHER_POLL_INTERVAL:-30}
       - WATCHER_STABLE_SECONDS=${WATCHER_STABLE_SECONDS:-10}
