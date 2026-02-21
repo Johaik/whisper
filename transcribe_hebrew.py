@@ -2,14 +2,6 @@
 """
 Hebrew Transcription Tool using OpenAI Whisper
 Optimized for Hebrew with ivrit-ai's fine-tuned models
-
-For best Hebrew accuracy, use the ivrit-ai models which are specifically
-trained on 295+ hours of Hebrew speech data.
-
-Features:
-- Hebrew-optimized transcription with ivrit-ai models
-- Speaker diarization (who said what) with pyannote
-- Timestamps and file output
 """
 
 import argparse
@@ -17,83 +9,31 @@ import os
 import sys
 from pathlib import Path
 
-# Check which library is available
+# Add current directory to path so we can import app
+sys.path.append(str(Path(__file__).parent))
+
+# Import app modules
+try:
+    from app.config import get_settings
+    from app.processors.transcribe import transcribe_audio
+    from app.processors.diarize import diarize_audio, assign_speakers_to_transcript, HAS_DIARIZE_DEPS
+except ImportError as e:
+    print(f"❌ Error importing app modules: {e}")
+    sys.exit(1)
+
+# Check availability of faster-whisper (needed for app.processors.transcribe)
 try:
     import faster_whisper
     FASTER_WHISPER_AVAILABLE = True
 except ImportError:
     FASTER_WHISPER_AVAILABLE = False
 
+# Check availability of openai-whisper (for fallback)
 try:
     import whisper
     WHISPER_AVAILABLE = True
 except ImportError:
     WHISPER_AVAILABLE = False
-
-try:
-    from pyannote.audio import Pipeline as DiarizationPipeline
-    import torch
-    PYANNOTE_AVAILABLE = True
-except ImportError:
-    PYANNOTE_AVAILABLE = False
-
-
-def transcribe_with_faster_whisper(
-    audio_path: str,
-    model_name: str = "ivrit-ai/whisper-large-v3-turbo-ct2",
-    beam_size: int = 5,
-    vad_filter: bool = True,
-) -> dict:
-    """
-    Transcribe Hebrew audio using faster-whisper (recommended for speed).
-    
-    Args:
-        audio_path: Path to the audio file
-        model_name: Model name (ivrit-ai models recommended for Hebrew)
-        beam_size: Beam size for decoding (higher = more accurate but slower)
-        vad_filter: Use voice activity detection to filter out silence
-    
-    Returns:
-        Dictionary containing transcription results
-    """
-    print(f"🔄 Loading faster-whisper model: {model_name}...")
-    
-    # Use CPU with int8 quantization for Mac, or GPU if available
-    model = faster_whisper.WhisperModel(
-        model_name,
-        device="cpu",  # Use "cuda" if you have NVIDIA GPU
-        compute_type="int8",  # Use "float16" for GPU
-    )
-    
-    print(f"🎙️ Transcribing: {audio_path}")
-    
-    segments, info = model.transcribe(
-        audio_path,
-        language="he",
-        beam_size=beam_size,
-        vad_filter=vad_filter,  # Filter out silence
-        vad_parameters=dict(
-            min_silence_duration_ms=500,  # Minimum silence to split
-        ),
-    )
-    
-    # Collect all segments
-    texts = []
-    all_segments = []
-    for segment in segments:
-        texts.append(segment.text)
-        all_segments.append({
-            "start": segment.start,
-            "end": segment.end,
-            "text": segment.text,
-        })
-    
-    return {
-        "text": " ".join(texts),
-        "segments": all_segments,
-        "language": info.language,
-        "language_probability": info.language_probability,
-    }
 
 
 def transcribe_with_whisper(
@@ -151,133 +91,26 @@ def transcribe_with_whisper(
     return result
 
 
-def run_diarization(audio_path: str, hf_token: str = None, num_speakers: int = None) -> list:
-    """
-    Run speaker diarization to identify who spoke when.
-    
-    Args:
-        audio_path: Path to the audio file
-        hf_token: HuggingFace token (required for pyannote models)
-        num_speakers: Optional number of speakers (auto-detect if None)
-    
-    Returns:
-        List of (start, end, speaker) tuples
-    """
-    if not PYANNOTE_AVAILABLE:
-        raise ImportError("pyannote.audio not installed. Run: pip install pyannote.audio")
-    
-    # Get token from argument or environment
-    token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
-    
-    if not token:
-        raise ValueError(
-            "HuggingFace token required for speaker diarization.\n"
-            "Get a token at: https://huggingface.co/settings/tokens\n"
-            "Then either:\n"
-            "  1. Set HF_TOKEN environment variable: export HF_TOKEN=your_token\n"
-            "  2. Pass --hf-token your_token\n\n"
-            "Note: You must also accept the model terms at:\n"
-            "  https://huggingface.co/pyannote/speaker-diarization-3.1"
-        )
-    
-    print("🔄 Loading speaker diarization model...")
-    
-    # Load pyannote diarization pipeline
-    pipeline = DiarizationPipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
-        use_auth_token=token
-    )
-    
-    # Use GPU if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    pipeline.to(device)
-    
-    print(f"👥 Identifying speakers in: {audio_path}")
-    
-    # Run diarization
-    if num_speakers:
-        diarization = pipeline(audio_path, num_speakers=num_speakers)
-    else:
-        diarization = pipeline(audio_path)
-    
-    # Extract speaker segments
-    speaker_segments = []
-    for turn, _, speaker in diarization.itertracks(yield_label=True):
-        speaker_segments.append({
-            "start": turn.start,
-            "end": turn.end,
-            "speaker": speaker
-        })
-    
-    return speaker_segments
-
-
-def transcribe_with_diarization(
-    audio_path: str,
-    model_name: str = "ivrit-ai/whisper-large-v3-turbo-ct2",
-    beam_size: int = 5,
-    hf_token: str = None,
-    num_speakers: int = None,
-) -> dict:
-    """
-    Transcribe with speaker diarization (who said what).
-    
-    Combines faster-whisper transcription with pyannote speaker diarization.
-    """
-    if not FASTER_WHISPER_AVAILABLE:
-        raise ImportError("faster-whisper not installed. Run: pip install faster-whisper")
-    
-    # Step 1: Run diarization
-    speaker_segments = run_diarization(audio_path, hf_token, num_speakers)
-    
-    # Count unique speakers
-    unique_speakers = set(seg["speaker"] for seg in speaker_segments)
-    print(f"👥 Found {len(unique_speakers)} speakers")
-    
-    # Step 2: Transcribe with word timestamps
-    print(f"🔄 Loading faster-whisper model: {model_name}...")
-    model = faster_whisper.WhisperModel(
-        model_name,
-        device="cpu",
-        compute_type="int8",
-    )
-    
-    print(f"🎙️ Transcribing: {audio_path}")
-    segments, info = model.transcribe(
-        audio_path,
-        language="he",
-        beam_size=beam_size,
-        word_timestamps=True,
-    )
-    segments = list(segments)
-    
-    # Step 3: Assign speakers to transcription segments
-    print("🔄 Matching speakers to text...")
-    results = []
-    
-    for segment in segments:
-        segment_mid = (segment.start + segment.end) / 2
+def format_result(transcription_result) -> dict:
+    """Convert TranscriptionResult object to dictionary format."""
+    segments = []
+    for seg in transcription_result.segments:
+        segment_dict = {
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text,
+        }
+        if seg.speaker:
+            segment_dict["speaker"] = seg.speaker
+        segments.append(segment_dict)
         
-        # Find speaker at midpoint
-        speaker = "UNKNOWN"
-        for diar_seg in speaker_segments:
-            if diar_seg["start"] <= segment_mid <= diar_seg["end"]:
-                speaker = diar_seg["speaker"]
-                break
-        
-        results.append({
-            "speaker": speaker,
-            "start": segment.start,
-            "end": segment.end,
-            "text": segment.text.strip(),
-        })
-    
     return {
-        "segments": results,
-        "text": " ".join(seg["text"] for seg in results),
-        "language": info.language,
-        "language_probability": info.language_probability,
-        "num_speakers": len(unique_speakers),
+        "text": transcription_result.text,
+        "segments": segments,
+        "language": transcription_result.language,
+        "language_probability": transcription_result.language_probability,
+        # Helper for printing stats
+        "num_speakers": len(set(s.speaker for s in transcription_result.segments if s.speaker)) if any(s.speaker for s in transcription_result.segments) else 0
     }
 
 
@@ -385,13 +218,24 @@ Recommended for Hebrew:
     if not audio_path.exists():
         print(f"❌ Error: Audio file not found: {args.audio}")
         sys.exit(1)
+
+    # Set environment variables for settings
+    if args.hf_token:
+        os.environ["HUGGINGFACE_TOKEN"] = args.hf_token
+
+    # Ensure diarization is enabled if requested
+    if args.diarize:
+        os.environ["DIARIZATION_ENABLED"] = "true"
+
+    # Clear settings cache to pick up new env vars
+    get_settings.cache_clear()
     
     # Choose transcription method
     if args.diarize:
         # Speaker diarization mode
-        if not PYANNOTE_AVAILABLE:
-            print("❌ Error: pyannote.audio not installed.")
-            print("   Install with: pip install pyannote.audio")
+        if not HAS_DIARIZE_DEPS:
+            print("❌ Error: pyannote.audio/torch/torchaudio not installed.")
+            print("   Install with: pip install -r requirements-ml.txt")
             sys.exit(1)
         
         if not FASTER_WHISPER_AVAILABLE:
@@ -400,15 +244,38 @@ Recommended for Hebrew:
             sys.exit(1)
         
         try:
-            result = transcribe_with_diarization(
+            # 1. Diarize
+            print("🔄 Running speaker diarization...")
+            diarization_result = diarize_audio(str(audio_path), num_speakers=args.num_speakers)
+            print(f"👥 Found {diarization_result.speaker_count} speakers")
+
+            # 2. Transcribe
+            # Note: We hardcode ivrit-ai model here as in original script, unless user overrides?
+            # Original script: model_name="ivrit-ai/whisper-large-v3-turbo-ct2"
+            model_name = "ivrit-ai/whisper-large-v3-turbo-ct2"
+
+            print(f"🔄 Transcribing with faster-whisper model: {model_name}...")
+            transcription_result = transcribe_audio(
                 str(audio_path),
-                model_name="ivrit-ai/whisper-large-v3-turbo-ct2",
+                model_name=model_name,
                 beam_size=args.beam_size,
-                hf_token=args.hf_token,
-                num_speakers=args.num_speakers,
+                vad_filter=not args.no_vad,
+                initial_prompt=args.prompt,
             )
-        except ValueError as e:
+
+            # 3. Assign speakers
+            print("🔄 Matching speakers to text...")
+            transcription_result.segments = assign_speakers_to_transcript(
+                transcription_result.segments,
+                diarization_result
+            )
+
+            result = format_result(transcription_result)
+
+        except Exception as e:
             print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
     
     elif args.ivrit:
@@ -417,19 +284,27 @@ Recommended for Hebrew:
             print("   Install with: pip install faster-whisper")
             sys.exit(1)
         
-        result = transcribe_with_faster_whisper(
-            str(audio_path),
-            model_name="ivrit-ai/whisper-large-v3-turbo-ct2",
-            beam_size=args.beam_size,
-            vad_filter=not args.no_vad,
-        )
+        try:
+            print(f"🔄 Transcribing with ivrit-ai model...")
+            transcription_result = transcribe_audio(
+                str(audio_path),
+                model_name="ivrit-ai/whisper-large-v3-turbo-ct2",
+                beam_size=args.beam_size,
+                vad_filter=not args.no_vad,
+                initial_prompt=args.prompt,
+            )
+            result = format_result(transcription_result)
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            sys.exit(1)
+
     else:
         if not WHISPER_AVAILABLE:
             print("❌ Error: openai-whisper not installed.")
             print("   Install with: pip install openai-whisper")
             sys.exit(1)
         
-        # For translation, we need original whisper
+        # For translation, we need original whisper (or if using other models without faster-whisper)
         if args.translate:
             print("🔄 Loading Whisper for translation...")
             model = whisper.load_model(args.model)

@@ -81,6 +81,9 @@ def transcribe_audio(
     device: str | None = None,
     compute_type: str | None = None,
     progress_callback: Callable[[int], None] | None = None,
+    language: str = "he",
+    task: str = "transcribe",
+    initial_prompt: str | None = None,
 ) -> TranscriptionResult:
     """Transcribe audio file using faster-whisper.
 
@@ -92,6 +95,9 @@ def transcribe_audio(
         vad_min_silence_ms: Minimum silence duration for VAD
         device: Device to use (cpu or cuda)
         compute_type: Compute type
+        language: Language code (default: "he")
+        task: Task to perform (transcribe or translate)
+        initial_prompt: Optional prompt to guide transcription
 
     Returns:
         TranscriptionResult with full text and segments
@@ -118,10 +124,12 @@ def transcribe_audio(
     # Run transcription
     segments_iter, info = model.transcribe(
         audio_path,
-        language="he",
+        language=language,
+        task=task,
         beam_size=beam_size,
         vad_filter=vad_filter,
         vad_parameters=vad_parameters,
+        initial_prompt=initial_prompt,
     )
 
     # Collect all segments

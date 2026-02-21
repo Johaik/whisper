@@ -139,11 +139,12 @@ def _load_audio_as_waveform(audio_path: str) -> tuple[Any, int]:
             os.unlink(temp_wav)
 
 
-def diarize_audio(audio_path: str) -> DiarizationResult:
+def diarize_audio(audio_path: str, num_speakers: int | None = None) -> DiarizationResult:
     """Run speaker diarization on an audio file.
 
     Args:
         audio_path: Path to the audio file
+        num_speakers: Optional number of speakers (auto-detect if None)
 
     Returns:
         DiarizationResult with speaker segments
@@ -163,7 +164,12 @@ def diarize_audio(audio_path: str) -> DiarizationResult:
     pipeline = get_or_load_pipeline()
     
     # Pass pre-loaded audio to avoid pyannote's audio loading issues
-    diarization_output = pipeline({'waveform': waveform, 'sample_rate': sample_rate})
+    # Pass num_speakers if provided
+    kwargs = {}
+    if num_speakers:
+        kwargs["num_speakers"] = num_speakers
+
+    diarization_output = pipeline({'waveform': waveform, 'sample_rate': sample_rate}, **kwargs)
 
     # Handle pyannote 4.0 output format (DiarizeOutput object)
     if hasattr(diarization_output, 'speaker_diarization'):
