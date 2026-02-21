@@ -136,6 +136,32 @@ class TestRecordingModel:
         assert "test.m4a" in repr(recording)
         assert "discovered" in repr(recording)
 
+    def test_format_error_message(self, db_session: Session):
+        """Test format_error_message method."""
+        recording = Recording(
+            file_path="/data/calls/test.m4a",
+            file_name="test.m4a",
+            file_hash="err123",
+            file_size=1024,
+        )
+        db_session.add(recording)
+        db_session.commit()
+
+        # Case 1: No step info
+        msg = recording.format_error_message("Something failed")
+        assert msg == "Step unknown: Something failed"
+
+        # Case 2: Step set, no segments
+        recording.processing_step = "extract_metadata"
+        msg = recording.format_error_message("Metadata error")
+        assert msg == "Step extract_metadata: Metadata error"
+
+        # Case 3: Step and segments
+        recording.processing_step = "transcribe"
+        recording.processing_segments_count = 42
+        msg = recording.format_error_message("Timeout")
+        assert msg == "Step transcribe (42 segments): Timeout"
+
 
 class TestTranscriptModel:
     """Tests for Transcript model."""

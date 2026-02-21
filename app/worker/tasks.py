@@ -26,32 +26,6 @@ logger = logging.getLogger("app.worker.tasks")
 settings = get_settings()
 
 
-def _error_message_with_step(session: Session, recording_id: str | uuid.UUID, base_message: str) -> str:
-    """Build error message including current processing step and segment count if in transcribe."""
-    # Ensure ID is UUID
-    if isinstance(recording_id, str):
-        try:
-            recording_id = uuid.UUID(recording_id)
-        except ValueError:
-            pass # Let query fail naturally if invalid
-
-    rec = session.query(Recording).filter(Recording.id == recording_id).first()
-    if not rec:
-        return base_message
-
-    # Refresh to ensure we have latest step
-    try:
-        session.refresh(rec)
-    except Exception:
-        pass
-
-    step = rec.processing_step or "unknown"
-    seg = rec.processing_segments_count
-    if seg is not None:
-        return f"Step {step} ({seg} segments): {base_message}"
-    return f"Step {step}: {base_message}"
-
-
 def _set_processing_step(session: Session, recording_id: uuid.UUID, step: str) -> None:
     """Update the current processing step in the database."""
     rec = session.query(Recording).filter(Recording.id == recording_id).first()
@@ -476,16 +450,22 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         # Update recording status based on retry count
         recording = session.query(Recording).filter(Recording.id == rec_uuid).first()
         if recording:
+            # Refresh to ensure we have latest step
+            try:
+                session.refresh(recording)
+            except Exception:
+                pass
+
             retry_count = self.request.retries
             recording.retry_count = retry_count
-            recording.error_message = _error_message_with_step(session, rec_uuid, f"Timeout exceeded: {e}")
+            recording.error_message = recording.format_error_message(f"Timeout exceeded: {e}")
 
             # If we've exceeded max retries, mark as failed
             if retry_count >= settings.task_max_retries:
                 logger.error(f"Max retries ({settings.task_max_retries}) exceeded for {recording_id} due to timeout")
                 recording.status = RecordingStatus.FAILED
-                recording.error_message = _error_message_with_step(
-                    session, rec_uuid, f"Timeout exceeded after {retry_count} retries: {e}"
+                recording.error_message = recording.format_error_message(
+                    f"Timeout exceeded after {retry_count} retries: {e}"
                 )
                 session.commit()
                 # Don't re-raise - mark as failed and stop
@@ -516,9 +496,15 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         # Update recording with error (include step and segments for diagnosis)
         recording = session.query(Recording).filter(Recording.id == rec_uuid).first()
         if recording:
+            # Refresh to ensure we have latest step
+            try:
+                session.refresh(recording)
+            except Exception:
+                pass
+
             retry_count = self.request.retries
             recording.retry_count = retry_count
-            recording.error_message = _error_message_with_step(session, rec_uuid, str(e))
+            recording.error_message = recording.format_error_message(str(e))
             
             # If we've exceeded max retries, mark as failed
             if retry_count >= settings.task_max_retries:
@@ -544,7 +530,7 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
                 heartbeat_thread.join(timeout=5)
             
             # Clear segment and step progress (success or failure)
-            # IMPORTANT: This happens AFTER any error_message_with_step calls in except blocks
+            # IMPORTANT: This happens AFTER any format_error_message calls in except blocks
             rec = session.query(Recording).filter(Recording.id == rec_uuid).first()
             if rec:
                 if rec.processing_segments_count is not None:
