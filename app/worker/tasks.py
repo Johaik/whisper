@@ -482,6 +482,109 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 ENQUEUE_BATCH_SIZE = 50
 
 
+def _recover_stuck_recordings(session: Session) -> tuple[int, int]:
+    """Recover stuck recordings: PROCESSING with updated_at too old -> QUEUED or FAILED.
+
+    Returns:
+        tuple[int, int]: (failed_count, queued_count)
+    """
+    stuck_threshold_sec = settings.stuck_processing_threshold_sec
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stuck_threshold_sec)
+
+    # Get active tasks from Celery to avoid resetting tasks that are actually running
+    active_recording_ids = set()
+    try:
+        inspect = celery_app.control.inspect()
+        active = inspect.active()
+        if active:
+            for worker_tasks in active.values():
+                for task in worker_tasks:
+                    if task.get("name") == "process_recording" and task.get("args"):
+                        # recording_id is the first arg
+                        try:
+                            active_recording_ids.add(task["args"][0])
+                        except (IndexError, KeyError):
+                            pass
+    except Exception as e:
+        logger.warning(f"Could not get active tasks during stuck recovery: {e}")
+
+    # Stuck recovery: PROCESSING with updated_at too old -> QUEUED or FAILED
+    stuck = (
+        session.query(Recording)
+        .filter(Recording.status == RecordingStatus.PROCESSING)
+        .all()
+    )
+    failed_count = 0
+    queued_count = 0
+    now = datetime.now(timezone.utc)
+    for rec in stuck:
+        # If the task is explicitly active in Celery, it's not stuck
+        if str(rec.id) in active_recording_ids:
+            continue
+
+        # Ensure timezone awareness for comparison
+        rec_updated = rec.updated_at
+        if rec_updated.tzinfo is None:
+            rec_updated = rec_updated.replace(tzinfo=timezone.utc)
+
+        if rec_updated >= cutoff:
+            continue
+
+        age_sec = (now - rec_updated).total_seconds()
+        step = rec.processing_step or "?"
+        segments = rec.processing_segments_count or 0
+        logger.warning(
+            f"Stuck recording: id={rec.id} file={rec.file_name} step={step} segments={segments} last_update={rec_updated} age_sec={age_sec:.0f}"
+        )
+        retry_count = (rec.retry_count or 0) + 1
+        rec.retry_count = retry_count
+        if retry_count >= settings.task_max_retries:
+            rec.status = RecordingStatus.FAILED
+            age_min = int(age_sec // 60)
+            rec.error_message = (
+                f"Stuck in step {step} ({segments} segments); last update {age_min}m ago (cleanup)"
+            )
+            failed_count += 1
+        else:
+            rec.status = RecordingStatus.QUEUED
+            rec.error_message = None
+            queued_count += 1
+
+    session.commit()
+    if failed_count or queued_count:
+        logger.info(
+            f"enqueue_pending_recordings: stuck->failed={failed_count}, stuck->queued={queued_count}"
+        )
+
+    return failed_count, queued_count
+
+
+def _enqueue_new_recordings(session: Session) -> int:
+    """Enqueue new recordings: QUEUED -> set PROCESSING, then .delay() once per recording.
+
+    Returns:
+        int: Number of recordings enqueued
+    """
+    to_enqueue = (
+        session.query(Recording)
+        .filter(Recording.status == RecordingStatus.QUEUED)
+        .order_by(Recording.updated_at.asc())
+        .limit(ENQUEUE_BATCH_SIZE)
+        .all()
+    )
+    enqueued = 0
+    for rec in to_enqueue:
+        rec.status = RecordingStatus.PROCESSING
+        session.commit()
+        process_recording.delay(str(rec.id))
+        enqueued += 1
+
+    if enqueued:
+        logger.info(f"enqueue_pending_recordings: enqueued={enqueued}")
+
+    return enqueued
+
+
 @celery_app.task(name="enqueue_pending_recordings")
 def enqueue_pending_recordings() -> dict[str, Any]:
     """Single enqueuer: reset stuck PROCESSING to QUEUED (or FAILED), then enqueue QUEUED.
@@ -490,89 +593,18 @@ def enqueue_pending_recordings() -> dict[str, Any]:
     Run periodically (e.g. Celery Beat every 1–2 min).
     """
     session = get_sync_session()
-    stuck_threshold_sec = settings.stuck_processing_threshold_sec
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stuck_threshold_sec)
     try:
-        # Get active tasks from Celery to avoid resetting tasks that are actually running
-        active_recording_ids = set()
-        try:
-            inspect = celery_app.control.inspect()
-            active = inspect.active()
-            if active:
-                for worker_tasks in active.values():
-                    for task in worker_tasks:
-                        if task.get("name") == "process_recording" and task.get("args"):
-                            # recording_id is the first arg
-                            try:
-                                active_recording_ids.add(task["args"][0])
-                            except (IndexError, KeyError):
-                                pass
-        except Exception as e:
-            logger.warning(f"Could not get active tasks during stuck recovery: {e}")
+        # 1) Stuck recovery
+        failed_count, queued_count = _recover_stuck_recordings(session)
 
-        # 1) Stuck recovery: PROCESSING with updated_at too old -> QUEUED or FAILED
-        stuck = (
-            session.query(Recording)
-            .filter(Recording.status == RecordingStatus.PROCESSING)
-            .all()
-        )
-        failed_count = 0
-        queued_count = 0
-        now = datetime.now(timezone.utc)
-        for rec in stuck:
-            # If the task is explicitly active in Celery, it's not stuck
-            if str(rec.id) in active_recording_ids:
-                continue
+        # 2) Enqueue
+        enqueued = _enqueue_new_recordings(session)
 
-            # Ensure timezone awareness for comparison
-            rec_updated = rec.updated_at
-            if rec_updated.tzinfo is None:
-                rec_updated = rec_updated.replace(tzinfo=timezone.utc)
-
-            if rec_updated >= cutoff:
-                continue
-
-            age_sec = (now - rec_updated).total_seconds()
-            step = rec.processing_step or "?"
-            segments = rec.processing_segments_count or 0
-            logger.warning(
-                f"Stuck recording: id={rec.id} file={rec.file_name} step={step} segments={segments} last_update={rec_updated} age_sec={age_sec:.0f}"
-            )
-            retry_count = (rec.retry_count or 0) + 1
-            rec.retry_count = retry_count
-            if retry_count >= settings.task_max_retries:
-                rec.status = RecordingStatus.FAILED
-                age_min = int(age_sec // 60)
-                rec.error_message = (
-                    f"Stuck in step {step} ({segments} segments); last update {age_min}m ago (cleanup)"
-                )
-                failed_count += 1
-            else:
-                rec.status = RecordingStatus.QUEUED
-                rec.error_message = None
-                queued_count += 1
-        session.commit()
-        if failed_count or queued_count:
-            logger.info(f"enqueue_pending_recordings: stuck->failed={failed_count}, stuck->queued={queued_count}")
-
-        # 2) Enqueue: QUEUED -> set PROCESSING, then .delay() once per recording
-        to_enqueue = (
-            session.query(Recording)
-            .filter(Recording.status == RecordingStatus.QUEUED)
-            .order_by(Recording.updated_at.asc())
-            .limit(ENQUEUE_BATCH_SIZE)
-            .all()
-        )
-        enqueued = 0
-        for rec in to_enqueue:
-            rec.status = RecordingStatus.PROCESSING
-            session.commit()
-            process_recording.delay(str(rec.id))
-            enqueued += 1
-        if enqueued:
-            logger.info(f"enqueue_pending_recordings: enqueued={enqueued}")
-
-        return {"failed": failed_count, "reset_to_queued": queued_count, "enqueued": enqueued}
+        return {
+            "failed": failed_count,
+            "reset_to_queued": queued_count,
+            "enqueued": enqueued,
+        }
     except Exception as e:
         session.rollback()
         logger.exception(f"enqueue_pending_recordings failed: {e}")
