@@ -1,6 +1,7 @@
 """Tests for Alembic migrations."""
 
 import os
+import socket
 
 import pytest
 from alembic import command
@@ -12,12 +13,24 @@ from sqlalchemy import create_engine, inspect, text
 pytestmark = pytest.mark.db
 
 
+def _test_db_reachable() -> bool:
+    """Return True if test Postgres (localhost:5433) is reachable within 2s."""
+    try:
+        sock = socket.create_connection(("localhost", 5433), timeout=2)
+        sock.close()
+        return True
+    except (OSError, socket.timeout):
+        return False
+
+
 class TestMigrations:
     """Tests for database migrations."""
 
     @pytest.fixture(autouse=True)
     def setup_env(self, test_settings):
         """Set environment variable for Alembic migrations."""
+        if not _test_db_reachable():
+            pytest.skip("Test Postgres not reachable at localhost:5433 (start test DB or skip)")
         old_value = os.environ.get("DATABASE_URL_SYNC")
         os.environ["DATABASE_URL_SYNC"] = test_settings.database_url_sync
         yield
