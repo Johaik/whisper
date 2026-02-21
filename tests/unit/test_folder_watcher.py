@@ -407,3 +407,208 @@ class TestGetPendingCount:
         # 2 batches for hashes (since no names found)
         # Total 4 calls to all()
         assert session.query.return_value.filter.return_value.all.call_count == 4
+
+
+class TestSyncFromSource:
+    """Tests for syncing files from source folder."""
+
+    def test_sync_disabled_returns_zero(self, tmp_path: Path) -> None:
+        """Returns 0 if sync is not enabled."""
+        watcher = FolderWatcher(folder=tmp_path, sync_enabled=False)
+        assert watcher.sync_from_source() == 0
+
+    def test_source_missing_returns_zero(self, tmp_path: Path) -> None:
+        """Returns 0 if source folder does not exist."""
+        watcher = FolderWatcher(
+            folder=tmp_path,
+            sync_enabled=True,
+            source_folder=tmp_path / "nonexistent"
+        )
+        assert watcher.sync_from_source() == 0
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_syncs_new_files(
+        self,
+        mock_hash: MagicMock,
+        mock_session_cls: MagicMock,
+        tmp_path: Path
+    ) -> None:
+        """Syncs new files that don't exist in calls folder or DB."""
+        # Setup folders
+        source = tmp_path / "source"
+        source.mkdir()
+        calls = tmp_path / "calls"
+        calls.mkdir()
+
+        # Create file in source
+        (source / "new_file.mp3").write_text("content")
+
+        # Mock DB to return empty (no processed files)
+        session = MagicMock()
+        mock_session_cls.return_value = session
+        session.query.return_value.all.return_value = []
+
+        mock_hash.return_value = "new_hash"
+
+        watcher = FolderWatcher(
+            folder=calls,
+            sync_enabled=True,
+            source_folder=source
+        )
+
+        copied = watcher.sync_from_source()
+
+        assert copied == 1
+        assert (calls / "new_file.mp3").exists()
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_skips_existing_name_in_folder(
+        self,
+        mock_hash: MagicMock,
+        mock_session_cls: MagicMock,
+        tmp_path: Path
+    ) -> None:
+        """Skips files that already exist in the calls folder by name."""
+        source = tmp_path / "source"
+        source.mkdir()
+        calls = tmp_path / "calls"
+        calls.mkdir()
+
+        # Create file in source AND calls
+        (source / "existing.mp3").write_text("content")
+        (calls / "existing.mp3").write_text("content")
+
+        # Mock DB empty
+        session = MagicMock()
+        mock_session_cls.return_value = session
+        session.query.return_value.all.return_value = []
+
+        watcher = FolderWatcher(
+            folder=calls,
+            sync_enabled=True,
+            source_folder=source
+        )
+
+        copied = watcher.sync_from_source()
+
+        assert copied == 0
+        # Hash shouldn't be computed for name-match
+        mock_hash.assert_not_called()
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_skips_processed_hash(
+        self,
+        mock_hash: MagicMock,
+        mock_session_cls: MagicMock,
+        tmp_path: Path
+    ) -> None:
+        """Skips files that exist in the DB by hash."""
+        source = tmp_path / "source"
+        source.mkdir()
+        calls = tmp_path / "calls"
+        calls.mkdir()
+
+        (source / "processed.mp3").write_text("content")
+
+        # Mock DB returns the hash
+        session = MagicMock()
+        mock_session_cls.return_value = session
+
+        mock_record = MagicMock()
+        mock_record.file_hash = "known_hash"
+        mock_record.file_name = "processed.mp3"
+        # Let's say name is different in DB but hash is same (renamed file in source)
+        mock_record.file_name = "old_name.mp3"
+
+        session.query.return_value.all.return_value = [mock_record]
+
+        mock_hash.return_value = "known_hash"
+
+        watcher = FolderWatcher(
+            folder=calls,
+            sync_enabled=True,
+            source_folder=source
+        )
+
+        copied = watcher.sync_from_source()
+
+        assert copied == 0
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_respects_batch_size(
+        self,
+        mock_hash: MagicMock,
+        mock_session_cls: MagicMock,
+        tmp_path: Path
+    ) -> None:
+        """Only copies up to sync_batch_size files."""
+        source = tmp_path / "source"
+        source.mkdir()
+        calls = tmp_path / "calls"
+        calls.mkdir()
+
+        # Create 3 files
+        for i in range(3):
+            (source / f"file{i}.mp3").write_text("content")
+            # Set mtime to ensure order
+            import os
+            os.utime(source / f"file{i}.mp3", (i, i))
+
+        session = MagicMock()
+        mock_session_cls.return_value = session
+        session.query.return_value.all.return_value = []
+
+        mock_hash.side_effect = lambda x: f"hash_{Path(x).name}"
+
+        watcher = FolderWatcher(
+            folder=calls,
+            sync_enabled=True,
+            source_folder=source,
+            sync_batch_size=2
+        )
+
+        copied = watcher.sync_from_source()
+
+        assert copied == 2
+        # Should copy oldest files first (file0 and file1)
+        assert (calls / "file0.mp3").exists()
+        assert (calls / "file1.mp3").exists()
+        assert not (calls / "file2.mp3").exists()
+
+    @patch("app.watcher.folder_watcher.SyncSessionLocal")
+    @patch("app.watcher.folder_watcher.compute_file_hash")
+    def test_handles_copy_error(
+        self,
+        mock_hash: MagicMock,
+        mock_session_cls: MagicMock,
+        tmp_path: Path
+    ) -> None:
+        """Handles exceptions during copy gracefully."""
+        source = tmp_path / "source"
+        source.mkdir()
+        calls = tmp_path / "calls"
+        calls.mkdir()
+
+        (source / "error.mp3").write_text("content")
+
+        session = MagicMock()
+        mock_session_cls.return_value = session
+        session.query.return_value.all.return_value = []
+
+        mock_hash.return_value = "hash"
+
+        watcher = FolderWatcher(
+            folder=calls,
+            sync_enabled=True,
+            source_folder=source
+        )
+
+        with patch("shutil.copy2", side_effect=OSError("Copy failed")):
+            copied = watcher.sync_from_source()
+
+        assert copied == 0
+        assert not (calls / "error.mp3").exists()
