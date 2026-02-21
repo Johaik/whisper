@@ -134,25 +134,56 @@ class FolderWatcher:
             Number of pending files
         """
         audio_files = self.scan_folder()
+        if not audio_files:
+            return 0
+
         pending = 0
-        
         session = SyncSessionLocal()
         try:
-            for file_path in audio_files:
-                # First check by name (faster)
-                existing_name = session.query(Recording).filter(
-                    Recording.file_name == file_path.name
-                ).first()
-                if existing_name:
-                    continue
+            # 1. Check by name in batches (faster)
+            file_names = [f.name for f in audio_files]
+            existing_names = set()
+            batch_size = 500
 
-                # Then check by hash
-                file_hash = compute_file_hash(str(file_path))
-                existing_hash = session.query(Recording).filter(
-                    Recording.file_hash == file_hash
-                ).first()
-                if not existing_hash:
+            for i in range(0, len(file_names), batch_size):
+                batch = file_names[i:i + batch_size]
+                if not batch:
+                    continue
+                results = session.query(Recording.file_name).filter(
+                    Recording.file_name.in_(batch)
+                ).all()
+                existing_names.update(r[0] for r in results)
+
+            # Identify candidates that passed the name check
+            candidates = [f for f in audio_files if f.name not in existing_names]
+
+            if not candidates:
+                return 0
+
+            # 2. Check by hash for remaining candidates
+            candidate_hashes = {}
+            for f in candidates:
+                # This might raise an exception if file is unreadable, consistent with original behavior
+                h = compute_file_hash(str(f))
+                candidate_hashes[f] = h
+
+            hashes_to_check = list(candidate_hashes.values())
+            existing_hashes = set()
+
+            if hashes_to_check:
+                for i in range(0, len(hashes_to_check), batch_size):
+                    batch = hashes_to_check[i:i + batch_size]
+                    if not batch:
+                        continue
+                    results = session.query(Recording.file_hash).filter(
+                        Recording.file_hash.in_(batch)
+                    ).all()
+                    existing_hashes.update(r[0] for r in results)
+
+            for f in candidates:
+                if candidate_hashes[f] not in existing_hashes:
                     pending += 1
+
         finally:
             session.close()
         
