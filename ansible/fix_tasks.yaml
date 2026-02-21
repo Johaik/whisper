@@ -1,0 +1,24 @@
+---
+- name: Fix stuck tasks and purge queue
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: Purge Celery queue in Redis
+      ansible.windows.win_powershell:
+        script: |
+          docker exec whisper-redis redis-cli del celery
+          Write-Output "Redis queue 'celery' purged"
+
+    - name: Reset PROCESSING recordings to QUEUED in database
+      ansible.windows.win_powershell:
+        script: |
+          $query = "UPDATE recordings SET status = 'queued', processing_step = NULL, processing_segments_count = NULL WHERE status = 'processing';"
+          docker exec whisper-postgres psql -U whisper -d whisper -c "$query"
+          Write-Output "Reset PROCESSING recordings to QUEUED"
+
+    - name: Clear any stale Flower data (optional)
+      ansible.windows.win_powershell:
+        script: |
+          docker exec whisper-redis redis-cli del flower:state
+          Write-Output "Flower state cleared"
