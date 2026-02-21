@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 # Suppress annoying pyannote/speechbrain/torch warnings
-warnings.filterwarnings("ignore", message="std\(\): degrees of freedom is <= 0")
+warnings.filterwarnings("ignore", message=r"std\(\): degrees of freedom is <= 0")
 warnings.filterwarnings("ignore", message="You are using `torch.load` with `weights_only=False`")
 
 # Quiet down noisy loggers
