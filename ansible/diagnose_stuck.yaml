@@ -49,7 +49,19 @@
           Write-Output ""
           Write-Output "=== API QUEUE STATUS ==="
           try {
-            $q = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/queue/status" -TimeoutSec 5
+            $headers = @{}
+            # Try to find .env file in common locations
+            $possiblePaths = @("C:\app\.env", "$env:SystemDrive\app\.env", ".\.env")
+            $envFile = $possiblePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+            if ($envFile) {
+              $line = Get-Content $envFile | Where-Object { $_ -match "^API_TOKEN=" } | Select-Object -First 1
+              if ($line) {
+                $token = $line.Split("=", 2)[1].Trim()
+                $headers["Authorization"] = "Bearer $token"
+              }
+            }
+            $q = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/queue/status" -Headers $headers -TimeoutSec 5
             Write-Output "  queued: $($q.queued), processing: $($q.processing), active_tasks: $($q.active_tasks), can_accept_more: $($q.can_accept_more)"
           } catch {
             Write-Output "  API queue status failed: $_"

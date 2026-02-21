@@ -27,7 +27,16 @@
           Write-Output "│ PROCESSING QUEUE                                            │"
           Write-Output "└─────────────────────────────────────────────────────────────┘"
           try {
-            $q = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/queue/status" -TimeoutSec 5
+            $headers = @{}
+            $envFile = "{{ win_app_dir }}\.env"
+            if (Test-Path $envFile) {
+              $line = Get-Content $envFile | Where-Object { $_ -match "^API_TOKEN=" } | Select-Object -First 1
+              if ($line) {
+                $token = $line.Split("=", 2)[1].Trim()
+                $headers["Authorization"] = "Bearer $token"
+              }
+            }
+            $q = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/queue/status" -Headers $headers -TimeoutSec 5
             Write-Output ("  Waiting (Queued) : {0}" -f $q.queued)
             Write-Output ("  Active (Moving)  : {0}" -f $q.processing)
             Write-Output ("  Total Pending    : {0}" -f ($q.queued + $q.processing))
