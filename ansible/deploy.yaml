@@ -366,7 +366,7 @@
       ansible.windows.win_copy:
         content: |
           # Environment variables for whisper deployment
-          API_TOKEN=dev-token-change-me
+          API_TOKEN={{ api_token }}
           MODEL_NAME=ivrit-ai/whisper-large-v3-turbo-ct2
           
           # Diarization (speaker detection)

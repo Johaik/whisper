@@ -17,9 +17,19 @@ class Settings(BaseSettings):
     )
 
     # API settings
-    api_token: str = "dev-token-change-me"
+    api_token: str
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+
+    @field_validator("api_token")
+    @classmethod
+    def validate_api_token(cls, v: str) -> str:
+        """Validate API token security."""
+        if not v or not v.strip():
+            raise ValueError("API token cannot be empty")
+        if v == "dev-token-change-me":
+            raise ValueError("API token cannot be the default insecure value. Please set a secure API_TOKEN.")
+        return v
 
     # Database settings
     database_url: str = "postgresql+asyncpg://whisper:whisper@localhost:5432/whisper"

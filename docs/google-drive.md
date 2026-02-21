@@ -182,7 +182,7 @@ docker exec whisper-redis redis-cli LLEN celery
 
 Via API (from Windows):
 ```powershell
-$token = "dev-token-change-me"
+$token = "your-api-token"
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/recordings?page_size=5" `
   -Headers @{ Authorization = "Bearer $token" }
 ```
