@@ -69,7 +69,8 @@ class TestGetOrLoadModel:
         from app.processors.transcribe import _model_cache
         _model_cache.clear()
 
-        with patch("faster_whisper.WhisperModel") as mock_model_class:
+        with patch("app.processors.transcribe.WhisperModel") as mock_model_class, \
+             patch("app.processors.transcribe.HAS_WHISPER_DEPS", True):
             mock_model_class.return_value = MagicMock()
 
             model = get_or_load_model(
@@ -89,7 +90,8 @@ class TestGetOrLoadModel:
         from app.processors.transcribe import _model_cache
         _model_cache.clear()
 
-        with patch("faster_whisper.WhisperModel") as mock_model_class:
+        with patch("app.processors.transcribe.WhisperModel") as mock_model_class, \
+             patch("app.processors.transcribe.HAS_WHISPER_DEPS", True):
             mock_model_class.return_value = MagicMock()
 
             # Load twice
