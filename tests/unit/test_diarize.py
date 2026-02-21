@@ -61,11 +61,12 @@ class TestDiarizeAudio:
     @patch("app.processors.diarize.get_settings")
     def test_processes_audio_when_enabled(self, mock_settings, mock_get_pipeline, mock_load_audio):
         """Test that audio is processed when diarization is enabled."""
-        import torch
         mock_settings.return_value.diarization_enabled = True
-        
-        # Mock audio loading
-        mock_load_audio.return_value = (torch.zeros(1, 16000), 16000)
+
+        # Mock audio loading - use MagicMock for the waveform tensor to avoid torch dependency in tests
+        mock_waveform = MagicMock()
+        mock_waveform.shape = [1, 16000]
+        mock_load_audio.return_value = (mock_waveform, 16000)
 
         # Mock pyannote pipeline
         mock_pipeline = MagicMock()

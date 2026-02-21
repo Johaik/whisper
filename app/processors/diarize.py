@@ -7,6 +7,17 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any
 
+try:
+    import torch
+    import torchaudio
+    from pyannote.audio import Pipeline
+    HAS_DIARIZE_DEPS = True
+except ImportError:
+    torch = None
+    torchaudio = None
+    Pipeline = None
+    HAS_DIARIZE_DEPS = False
+
 from app.config import get_settings
 from app.processors.transcribe import TranscriptSegment
 
@@ -49,16 +60,18 @@ def get_or_load_pipeline() -> Any:
                 "Set HUGGINGFACE_TOKEN environment variable."
             )
 
-        try:
-            import os
-            from pyannote.audio import Pipeline
+        if not HAS_DIARIZE_DEPS:
+            raise ImportError(
+                "Diarization dependencies (torch, pyannote.audio) are not installed. "
+                "Please install them with 'pip install -r requirements-ml.txt'"
+            )
 
+        try:
             # Set HuggingFace token in environment for pyannote
             if settings.huggingface_token:
                 os.environ["HF_TOKEN"] = settings.huggingface_token
 
             logger.info("Loading pyannote speaker diarization pipeline...")
-            import torch
             pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
             )
@@ -74,17 +87,21 @@ def get_or_load_pipeline() -> Any:
 
 def _load_audio_as_waveform(audio_path: str) -> tuple[Any, int]:
     """Load audio file as waveform tensor for pyannote.
-    
+
     Handles m4a and other formats by converting to WAV via ffmpeg.
-    
+
     Args:
         audio_path: Path to the audio file
-        
+
     Returns:
         Tuple of (waveform tensor, sample_rate)
     """
-    import torchaudio
-    
+    if not HAS_DIARIZE_DEPS:
+        raise ImportError(
+            "Diarization dependencies (torchaudio) are not installed. "
+            "Please install them with 'pip install -r requirements-ml.txt'"
+        )
+
     # Try loading directly first
     try:
         waveform, sample_rate = torchaudio.load(audio_path)
