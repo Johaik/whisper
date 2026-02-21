@@ -14,6 +14,7 @@ from app import __version__
 from app.api.schemas import (
     EnrichmentDetail,
     HealthResponse,
+    PingResponse,
     IngestRequest,
     IngestResponse,
     QueueStatusResponse,
@@ -39,6 +40,12 @@ router = APIRouter()
 AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 AuthDep = Annotated[str, Depends(verify_token)]
+
+
+@router.get("/ping", response_model=PingResponse)
+async def ping() -> PingResponse:
+    """Simple ping endpoint."""
+    return PingResponse(status="pong")
 
 
 @router.get("/health", response_model=HealthResponse)
