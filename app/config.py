@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     task_timeout_seconds: int | None = None
     task_max_retries: int = 3
     # Stuck = no progress (no heartbeat) for this many seconds. Default 15 min.
-    stuck_processing_threshold_sec: int = 120
+    stuck_processing_threshold_sec: int = 10
     # Heartbeat interval: update recording.updated_at every N sec while processing so we detect stuck vs slow.
     heartbeat_interval_sec: int = 120
 
