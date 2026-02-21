@@ -9,6 +9,13 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+try:
+    from faster_whisper import WhisperModel
+    HAS_WHISPER_DEPS = True
+except ImportError:
+    WhisperModel = None
+    HAS_WHISPER_DEPS = False
+
 # Module-level model cache for reuse across tasks
 _model_cache: dict[str, Any] = {}
 
@@ -51,9 +58,13 @@ def get_or_load_model(
     Returns:
         The loaded WhisperModel instance
     """
-    from faster_whisper import WhisperModel
-
     settings = get_settings()
+
+    if not HAS_WHISPER_DEPS:
+        raise ImportError(
+            "Transcription dependencies (faster-whisper) are not installed. "
+            "Please install them with 'pip install -r requirements-ml.txt'"
+        )
     model_name = model_name or settings.model_name
     device = device or settings.device
     compute_type = compute_type or settings.compute_type
