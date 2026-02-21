@@ -7,7 +7,7 @@ All configuration is done via environment variables, either in `.env` file or di
 ### Local Development (Mac)
 Create `.env` in project root:
 ```bash
-API_TOKEN=dev-token-change-me
+API_TOKEN=your-secure-token-here
 DIARIZATION_ENABLED=false
 ```
 
@@ -20,7 +20,7 @@ The `.env` file is created automatically by `make deploy` at `C:\app\.env`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_TOKEN` | `dev-token-change-me` | API authentication token |
+| `API_TOKEN` | **Required** | API authentication token |
 | `DATABASE_URL` | `postgresql+asyncpg://whisper:whisper@postgres:5432/whisper` | Async PostgreSQL connection |
 | `DATABASE_URL_SYNC` | `postgresql://whisper:whisper@postgres:5432/whisper` | Sync PostgreSQL connection |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection string |

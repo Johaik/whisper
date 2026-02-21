@@ -209,7 +209,7 @@ Configure via environment variables or `.env` file:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_TOKEN` | `dev-token-change-me` | API authentication token |
+| `API_TOKEN` | **Required** | API authentication token |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL connection string |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
 | `CALLS_DIR` | `/data/calls` | Directory to watch for recordings |

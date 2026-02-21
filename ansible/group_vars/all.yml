@@ -8,6 +8,10 @@ ghcr_username: "johaik"  # Your GitHub username
 # Token is stored in ansible/.ghcr_token (gitignored)
 ghcr_token: "{{ lookup('file', playbook_dir + '/.ghcr_token') | trim }}"
 
+# API Authentication Token
+# Save secure token to: ansible/.api_token
+api_token: "{{ lookup('file', playbook_dir + '/.api_token', errors='ignore') | default('') | trim }}"
+
 # Image names (full path)
 images:
   api: "{{ ghcr_registry }}/{{ ghcr_username }}/whisper-api"
