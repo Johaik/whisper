@@ -182,3 +182,8 @@ class QueueStatusResponse(BaseModel):
     can_accept_more: bool = Field(description="True if queue can accept more files")
     threshold: int = Field(description="Queue threshold before accepting more")
 
+
+class PingResponse(BaseModel):
+    """Ping response."""
+
+    status: str
