@@ -32,8 +32,8 @@ class Settings(BaseSettings):
         return v
 
     # Database settings
-    database_url: str = "postgresql+asyncpg://whisper:whisper@localhost:5432/whisper"
-    database_url_sync: str = "postgresql://whisper:whisper@localhost:5432/whisper"
+    database_url: str
+    database_url_sync: str
 
     # Redis settings
     redis_url: str = "redis://localhost:6379/0"

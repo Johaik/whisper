@@ -4,12 +4,18 @@ import socket
 import tempfile
 import uuid
 import sys
+import os
 from collections.abc import AsyncGenerator, Generator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 import os
+
+# Set dummy environment variables to avoid Pydantic validation errors
+# during test collection when importing modules that instantiate Settings.
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
+os.environ.setdefault("DATABASE_URL_SYNC", "postgresql://user:pass@localhost/db")
 
 import pytest
 import pytest_asyncio
