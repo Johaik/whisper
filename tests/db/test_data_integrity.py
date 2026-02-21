@@ -6,7 +6,7 @@ those attempts produce ERROR lines in the DB logs—this is expected and not a b
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -260,7 +260,7 @@ class TestTimestamps:
 
     def test_created_at_is_set_automatically(self, db_session: Session):
         """Test that created_at is set on insert."""
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
 
         recording = Recording(
             file_path="/data/calls/test.m4a",
@@ -271,7 +271,7 @@ class TestTimestamps:
         db_session.add(recording)
         db_session.commit()
 
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
 
         assert before <= recording.created_at <= after
 
@@ -320,7 +320,7 @@ class TestTimestamps:
         db_session.add(recording)
         db_session.commit()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         recording.processed_at = now
         recording.status = RecordingStatus.DONE
         db_session.commit()
