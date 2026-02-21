@@ -564,11 +564,18 @@ def enqueue_pending_recordings() -> dict[str, Any]:
             .all()
         )
         enqueued = 0
+        # Batch update status to minimize DB commits
         for rec in to_enqueue:
             rec.status = RecordingStatus.PROCESSING
+
+        if to_enqueue:
             session.commit()
+
+        # Dispatch tasks after commit ensures they are marked PROCESSING
+        for rec in to_enqueue:
             process_recording.delay(str(rec.id))
             enqueued += 1
+
         if enqueued:
             logger.info(f"enqueue_pending_recordings: enqueued={enqueued}")
 
