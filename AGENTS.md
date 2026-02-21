@@ -38,3 +38,11 @@
 ## Configuration & Secrets
 - Local configuration lives in `.env`; never commit secrets or tokens.
 - `credentials.json` is required for Google Contacts integration; keep it out of Git history and document any setup steps in `docs/`.
+
+## Working with Jules (Google Jules Cloud)
+Jules is an asynchronous agent that can handle larger tasks. If you are Jules:
+1.  **Check the Roadmap:** Look at `ROADMAP.md` for prioritized tasks.
+2.  **Environment Check:** Run `python scripts/agent_health_check.py` to verify your environment.
+3.  **Use Makefile:** Prefer `make venv` and `make test` for environment and verification.
+4.  **Async Nature:** Remember that you may be running tasks over long periods; ensure logs are informative (step tracking, estimated progress).
+5.  **Documentation:** Keep `docs/plans/` updated with your progress if working on a long-running feature.

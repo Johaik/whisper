@@ -24,6 +24,13 @@ services:
     # Override image to use local build
     image: whisper-watcher:local
 
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    # Override image to use local build
+    image: whisper-worker:local
+
   migrate:
     build:
       context: .

@@ -1,0 +1,34 @@
+# .julesignore - Specific for Google Jules Cloud agents
+
+# Python environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Large data/models
+Calls/
+outputs/
+models/
+.whisper_models/
+
+# Logs and temp files
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Sensitive data
+.env
+credentials.json
+ansible/.ghcr_token
+ansible/inventory.ini
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
