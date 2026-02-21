@@ -58,8 +58,6 @@ def get_or_load_model(
     Returns:
         The loaded WhisperModel instance
     """
-    settings = get_settings()
-
     if not HAS_WHISPER_DEPS:
         raise ImportError(
             "Transcription dependencies (faster-whisper) are not installed. "

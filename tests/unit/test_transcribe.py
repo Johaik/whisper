@@ -102,6 +102,13 @@ class TestGetOrLoadModel:
             assert mock_model_class.call_count == 1
             assert model1 is model2
 
+    def test_raises_error_if_dependency_missing(self):
+        """Test that ImportError is raised if faster-whisper is missing."""
+        with patch("app.processors.transcribe.HAS_WHISPER_DEPS", False):
+            with pytest.raises(ImportError) as excinfo:
+                get_or_load_model()
+            assert "Transcription dependencies (faster-whisper) are not installed" in str(excinfo.value)
+
 
 class TestTranscribeAudio:
     """Tests for transcribe_audio function."""
