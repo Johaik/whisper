@@ -25,7 +25,7 @@ pytestmark = pytest.mark.integration
 def get_test_settings() -> Settings:
     """Get test-specific settings."""
     db_url_sync = "postgresql://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3"
-    db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test?connect_timeout=3000"
+    db_url_async = "postgresql+asyncpg://whisper_test:whisper_test@localhost:5433/whisper_test"
     return Settings(
         api_token="test-token",
         database_url=db_url_async,
@@ -579,7 +579,7 @@ class TestEnqueuePendingRecordings:
             processing_segments_count=0,
             retry_count=settings.task_max_retries - 1,
             updated_at=datetime.utcnow()
-            - timedelta(seconds=stuck_threshold + 10),
+            - timedelta(seconds=stuck_threshold + 300),
         )
         session.add(rec)
         session.commit()
