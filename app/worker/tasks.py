@@ -52,13 +52,31 @@ def _error_message_with_step(session: Session, recording_id: str | uuid.UUID, ba
     return f"Step {step}: {base_message}"
 
 
-def _set_processing_step(session: Session, recording_id: uuid.UUID, step: str) -> None:
+def _set_processing_step(session: Session, recording: Recording, step: str) -> None:
     """Update the current processing step in the database."""
-    rec = session.query(Recording).filter(Recording.id == recording_id).first()
-    if rec:
-        rec.processing_step = step
-        rec.processing_step_started_at = datetime.now(timezone.utc)
-        session.commit()
+    recording.processing_step = step
+    recording.processing_step_started_at = datetime.now(timezone.utc)
+    session.commit()
+
+
+def _run_heartbeat(stop_event: threading.Event, recording_id: uuid.UUID, interval: int) -> None:
+    """Run heartbeat loop to update recording updated_at timestamp."""
+    while True:
+        try:
+            hb_session = get_sync_session()
+            try:
+                hb_session.query(Recording).filter(Recording.id == recording_id).update(
+                    {Recording.updated_at: datetime.now(timezone.utc)},
+                    synchronize_session=False,
+                )
+                hb_session.commit()
+            finally:
+                hb_session.close()
+        except Exception as e:
+            logger.debug(f"Heartbeat update failed: {e}")
+
+        if stop_event.wait(interval):
+            break
 
 
 def _process_filename_metadata(session: Session, recording: Recording) -> None:
@@ -376,43 +394,30 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         logger.info(f"Processing file: {file_path}")
 
         # Step 0: Parse caller info from filename
-        _set_processing_step(session, rec_uuid, "parse_metadata")
+        _set_processing_step(session, recording, "parse_metadata")
         _process_filename_metadata(session, recording)
 
         # Step 1: Extract metadata
-        _set_processing_step(session, rec_uuid, "extract_metadata")
+        _set_processing_step(session, recording, "extract_metadata")
         metadata = _extract_and_update_metadata(session, recording, file_path)
 
         # Heartbeat setup
         heartbeat_interval = max(60, settings.heartbeat_interval_sec) if settings.heartbeat_interval_sec > 0 else 0
 
-        def heartbeat_loop() -> None:
-            while True:
-                try:
-                    hb_session = get_sync_session()
-                    try:
-                        hb_session.query(Recording).filter(Recording.id == rec_uuid).update(
-                            {Recording.updated_at: datetime.now(timezone.utc)},
-                            synchronize_session=False,
-                        )
-                        hb_session.commit()
-                    finally:
-                        hb_session.close()
-                except Exception as e:
-                    logger.debug(f"Heartbeat update failed: {e}")
-                if stop_heartbeat.wait(heartbeat_interval):
-                    break
-
         if heartbeat_interval > 0:
-            heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+            heartbeat_thread = threading.Thread(
+                target=_run_heartbeat,
+                args=(stop_heartbeat, rec_uuid, heartbeat_interval),
+                daemon=True
+            )
             heartbeat_thread.start()
 
         # Step 2: Transcribe (with segment progress for API and logs)
-        _set_processing_step(session, rec_uuid, "transcribe")
+        _set_processing_step(session, recording, "transcribe")
         transcript_result = _run_transcription(session, rec_uuid, file_path, metadata.duration_sec)
 
         # Step 3: Diarization (optional)
-        _set_processing_step(session, rec_uuid, "diarization")
+        _set_processing_step(session, recording, "diarization")
         segments, speaker_count, diarization_enabled, diarization_pending, diarization_skip_reason = _run_diarization(
             file_path,
             transcript_result.segments,
@@ -427,11 +432,11 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
         }
 
         # Step 4: Compute analytics
-        _set_processing_step(session, rec_uuid, "analytics")
+        _set_processing_step(session, recording, "analytics")
         analytics = _compute_analytics_step(segments, metadata.duration_sec)
 
         # Step 5: Store results
-        _set_processing_step(session, rec_uuid, "store_results")
+        _set_processing_step(session, recording, "store_results")
         _store_processing_results(
             session,
             recording,
