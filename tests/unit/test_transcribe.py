@@ -69,7 +69,7 @@ class TestGetOrLoadModel:
         from app.processors.transcribe import _model_cache
         _model_cache.clear()
 
-        with patch("faster_whisper.WhisperModel") as mock_model_class:
+        with patch("app.processors.transcribe.WhisperModel") as mock_model_class:
             mock_model_class.return_value = MagicMock()
 
             model = get_or_load_model(
@@ -89,7 +89,7 @@ class TestGetOrLoadModel:
         from app.processors.transcribe import _model_cache
         _model_cache.clear()
 
-        with patch("faster_whisper.WhisperModel") as mock_model_class:
+        with patch("app.processors.transcribe.WhisperModel") as mock_model_class:
             mock_model_class.return_value = MagicMock()
 
             # Load twice
@@ -99,6 +99,13 @@ class TestGetOrLoadModel:
             # Should only create once
             assert mock_model_class.call_count == 1
             assert model1 is model2
+
+    def test_raises_error_if_dependency_missing(self):
+        """Test that ImportError is raised if faster-whisper is missing."""
+        with patch("app.processors.transcribe.HAS_WHISPER", False):
+            with pytest.raises(ImportError) as excinfo:
+                get_or_load_model()
+            assert "faster-whisper is not installed" in str(excinfo.value)
 
 
 class TestTranscribeAudio:

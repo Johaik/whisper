@@ -12,6 +12,14 @@ logger = logging.getLogger(__name__)
 # Module-level model cache for reuse across tasks
 _model_cache: dict[str, Any] = {}
 
+try:
+    from faster_whisper import WhisperModel
+
+    HAS_WHISPER = True
+except ImportError:
+    WhisperModel = None
+    HAS_WHISPER = False
+
 
 @dataclass
 class TranscriptSegment:
@@ -51,7 +59,11 @@ def get_or_load_model(
     Returns:
         The loaded WhisperModel instance
     """
-    from faster_whisper import WhisperModel
+    if not HAS_WHISPER:
+        raise ImportError(
+            "faster-whisper is not installed. "
+            "Please install it with 'pip install -r requirements-ml.txt'"
+        )
 
     settings = get_settings()
     model_name = model_name or settings.model_name
