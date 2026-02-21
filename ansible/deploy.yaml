@@ -295,7 +295,7 @@
           $copied = @{}
           if (Test-Path $CopiedLog) {
             # Use -Unique to handle any existing bloat while loading
-            Get-Content $CopiedLog | Select-Object -Unique | ForEach-Object { $copied[$_] = $true }
+            Get-Content $CopiedLog -Encoding UTF8 | Select-Object -Unique | ForEach-Object { $copied[$_] = $true }
           }
           Log "Already copied (unique): $($copied.Count)"
           
@@ -317,7 +317,7 @@
             try {
               if (-not $copied.ContainsKey($file.Name)) {
                 Copy-Item $file.FullName -Destination $Dest -Force
-                Add-Content $CopiedLog $file.Name
+                Add-Content $CopiedLog $file.Name -Encoding UTF8
                 $copied[$file.Name] = $true
                 $copiedCount++
                 Log "  [$copiedCount/$($batch.Count)] $($file.Name)"

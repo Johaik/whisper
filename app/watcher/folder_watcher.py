@@ -112,11 +112,7 @@ class FolderWatcher:
         Returns:
             List of audio file paths
         """
-        audio_files: list[Path] = []
-        for ext in self.audio_extensions:
-            audio_files.extend(self.folder.glob(f"*{ext}"))
-            audio_files.extend(self.folder.glob(f"*{ext.upper()}"))
-        return audio_files
+        return [f for f in self.folder.iterdir() if f.is_file() and f.suffix.lower() in self.audio_extensions]
 
     def scan_source_folder(self) -> list[Path]:
         """
@@ -128,11 +124,7 @@ class FolderWatcher:
         if not self.source_folder or not self.source_folder.exists():
             return []
         
-        audio_files: list[Path] = []
-        for ext in self.audio_extensions:
-            audio_files.extend(self.source_folder.glob(f"*{ext}"))
-            audio_files.extend(self.source_folder.glob(f"*{ext.upper()}"))
-        return audio_files
+        return [f for f in self.source_folder.iterdir() if f.is_file() and f.suffix.lower() in self.audio_extensions]
 
     def get_pending_count_in_folder(self) -> int:
         """

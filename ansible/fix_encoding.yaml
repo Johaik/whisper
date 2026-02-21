@@ -1,0 +1,33 @@
+---
+- name: Fix Hebrew encoding in batch-copy script
+  hosts: windows
+  gather_facts: no
+
+  tasks:
+    - name: Update batch-copy.ps1 with UTF8 encoding
+      ansible.windows.win_shell: |
+        $scriptPath = "C:/app/batch-copy.ps1"
+        $content = Get-Content $scriptPath
+        $newContent = $content -replace 'Get-Content \$CopiedLog', 'Get-Content $CopiedLog -Encoding UTF8'
+        $newContent = $newContent -replace 'Add-Content \$CopiedLog \$file.Name', 'Add-Content $CopiedLog $file.Name -Encoding UTF8'
+        $newContent | Set-Content $scriptPath -Encoding UTF8
+      register: update_result
+
+    - name: Clean up question marks from log (optional but good)
+      ansible.windows.win_shell: |
+        $logPath = "C:/app/copied-files.txt"
+        if (Test-Path $logPath) {
+          $content = Get-Content $logPath -Encoding UTF8
+          $cleanContent = $content | Where-Object { $_ -notmatch '\?' }
+          $cleanContent | Set-Content $logPath -Encoding UTF8
+        }
+      ignore_errors: yes
+
+    - name: Run the script to verify progress
+      ansible.windows.win_shell: |
+        powershell.exe -File "C:/app/batch-copy.ps1" -BatchSize 50
+      register: run_result
+
+    - name: Display run output
+      ansible.builtin.debug:
+        msg: "{{ run_result.stdout_lines }}"
