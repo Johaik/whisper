@@ -1,0 +1,390 @@
+{
+    "title": "Windows Host Deep Dive",
+    "uid": "windows-deep-dive",
+    "tags": [
+        "windows",
+        "host",
+        "deep-dive",
+        "whisper"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "refresh": "1m",
+    "panels": [
+        {
+            "type": "row",
+            "title": "Key Indicators",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 1
+        },
+        {
+            "type": "stat",
+            "title": "CPU Usage",
+            "id": 2,
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 0,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "100 - (avg(rate(windows_cpu_time_total{mode=\"idle\"}[1m])) * 100)",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent",
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 70
+                            },
+                            {
+                                "color": "red",
+                                "value": 90
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "type": "stat",
+            "title": "Available Memory",
+            "id": 3,
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 4,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "windows_memory_available_bytes",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "bytes"
+                }
+            }
+        },
+        {
+            "type": "stat",
+            "title": "System Uptime",
+            "id": 4,
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 8,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "time() - windows_system_boot_time_timestamp",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                }
+            }
+        },
+        {
+            "type": "stat",
+            "title": "Context Switches / Sec",
+            "id": 5,
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 12,
+                "y": 1
+            },
+            "targets": [
+                {
+                    "expr": "rate(windows_system_context_switches_total[1m])",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            }
+        },
+        {
+            "type": "row",
+            "title": "CPU & Process",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 5
+            },
+            "id": 10
+        },
+        {
+            "type": "timeseries",
+            "title": "CPU Time per Core",
+            "id": 11,
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 6
+            },
+            "targets": [
+                {
+                    "expr": "100 - (rate(windows_cpu_time_total{mode=\"idle\"}[1m]) * 100)",
+                    "legendFormat": "Core {{core}}",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent"
+                }
+            }
+        },
+        {
+            "type": "timeseries",
+            "title": "Interrupts / Sec",
+            "id": 12,
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 6
+            },
+            "targets": [
+                {
+                    "expr": "rate(windows_cpu_interrupts_total[1m])",
+                    "legendFormat": "Interrupts",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "row",
+            "title": "Memory Details",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 14
+            },
+            "id": 20
+        },
+        {
+            "type": "timeseries",
+            "title": "Memory Pools",
+            "id": 21,
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 15
+            },
+            "targets": [
+                {
+                    "expr": "windows_memory_pool_paged_bytes",
+                    "legendFormat": "Paged Pool",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                },
+                {
+                    "expr": "windows_memory_pool_nonpaged_bytes",
+                    "legendFormat": "Non-Paged Pool",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "bytes"
+                }
+            }
+        },
+        {
+            "type": "timeseries",
+            "title": "Page Faults / Sec",
+            "id": 22,
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 15
+            },
+            "targets": [
+                {
+                    "expr": "rate(windows_memory_page_faults_total[1m])",
+                    "legendFormat": "Page Faults",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "row",
+            "title": "Disk & Network",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 23
+            },
+            "id": 30
+        },
+        {
+            "type": "timeseries",
+            "title": "Average Output/Input Queue Length",
+            "id": 31,
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "windows_logical_disk_requests_queued",
+                    "legendFormat": "{{volume}}",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "timeseries",
+            "title": "Split IOs / sec",
+            "id": 32,
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "rate(windows_logical_disk_split_ios_total[1m])",
+                    "legendFormat": "{{volume}}",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "timeseries",
+            "title": "Network Errors / Discards",
+            "id": 33,
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "rate(windows_net_packets_received_errors_total[1m]) or rate(windows_net_packets_outbound_errors_total[1m])",
+                    "legendFormat": "Errors ({{nic}})",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    }
+                },
+                {
+                    "expr": "rate(windows_net_packets_received_discarded_total[1m]) or rate(windows_net_packets_outbound_discarded_total[1m])",
+                    "legendFormat": "Discards ({{nic}})",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "grafanacloud-prom"
+                    },
+                    "hide": false
+                }
+            ]
+        },
+        {
+            "type": "row",
+            "title": "Windows Event Logs",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 32
+            },
+            "id": 40
+        },
+        {
+            "type": "logs",
+            "title": "Application Event Logs",
+            "id": 41,
+            "gridPos": {
+                "h": 12,
+                "w": 24,
+                "x": 0,
+                "y": 33
+            },
+            "targets": [
+                {
+                    "expr": "{job=\"windows_application_events\"} |~ \"\"",
+                    "datasource": {
+                        "type": "loki",
+                        "uid": "grafanacloud-logs"
+                    }
+                }
+            ],
+            "options": {
+                "showLabels": true,
+                "showTime": true,
+                "wrapLogMessage": true,
+                "sortOrder": "Descending"
+            }
+        }
+    ]
+}

@@ -1,0 +1,121 @@
+{
+  "id": null,
+  "uid": "whisper-logs-overview",
+  "title": "Windows & Application Logs Overview",
+  "tags": [
+    "logs",
+    "windows",
+    "whisper"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "panels": [
+    {
+      "type": "logs",
+      "title": "Windows Application Events (Errors & Warnings)",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"windows_application_events\"} |= \"error\" or \"warn\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Docker/FastAPI Application Logs",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "grafanacloud-logs"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"docker_containers\", app_service=~\"$app_service\"}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "app_service",
+        "type": "query",
+        "datasource": {
+          "uid": "grafanacloud-logs",
+          "type": "loki"
+        },
+        "query": "label_values({job=\"docker_containers\"}, app_service)",
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "job",
+        "type": "custom",
+        "query": "docker_containers,windows_application_events,windows_system_events",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [
+          {
+            "text": "All",
+            "value": "$__all",
+            "selected": true
+          },
+          {
+            "text": "docker_containers",
+            "value": "docker_containers",
+            "selected": false
+          },
+          {
+            "text": "windows_application_events",
+            "value": "windows_application_events",
+            "selected": false
+          },
+          {
+            "text": "windows_system_events",
+            "value": "windows_system_events",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -98,3 +98,4 @@ Thumbs.db
 .cursor/
 .cursorrules
 GEMINI.md
+/monitoring/config.alloy
