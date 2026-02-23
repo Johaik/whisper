@@ -704,7 +704,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum(max_over_time({container=~\"whisper-worker.*\"} |= \"Transcription progress\" | pattern \"<_>Transcription progress: <segments> segments <_>\" | unwrap segments [$__interval]))",
+          "expr": "sum(max_over_time({container=~\"whisper-worker.*\"} |= \"Transcription progress\" | regexp \"Transcription progress: (?P<segments>\\\\d+) segment\" | unwrap segments | __error__=\"\" [$__interval]))",
           "legendFormat": "Processed Segments Progression"
         },
         {
