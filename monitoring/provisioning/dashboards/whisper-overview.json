@@ -612,8 +612,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "type": "loki",
+        "uid": "grafanacloud-logs"
       },
       "fieldConfig": {
         "defaults": {
@@ -641,7 +641,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "always",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -662,20 +662,7 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Active Tasks"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
@@ -704,19 +691,11 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "sum(max_over_time({container=~\"whisper-worker.*\"} |= \"Transcription progress\" | regexp \"Transcription progress: (?P<segments>\\\\d+) segment\" | unwrap segments | __error__=\"\" [$__interval]))",
-          "legendFormat": "Processed Segments Progression"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "expr": "sum(flower_worker_number_of_currently_executing_tasks) or vector(0)",
-          "legendFormat": "Active Tasks"
+          "expr": "max_over_time({container=~\"whisper-worker.*\"} |= \"Transcription progress\" | regexp \"INFO/(?P<worker>ForkPoolWorker-\\\\d+)\\\\] Transcription progress: (?P<segments>\\\\d+) segment\" | unwrap segments | __error__=\"\" [$__interval]) by (worker)",
+          "legendFormat": "{{worker}} Segments"
         }
       ],
-      "title": "Task Activity vs Segment Processing Progression",
+      "title": "Individual Task Segment Progression & Duration",
       "type": "timeseries"
     },
     {
