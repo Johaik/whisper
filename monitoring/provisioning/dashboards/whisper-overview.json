@@ -611,12 +611,121 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Active Tasks"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "id": 889,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-logs"
+          },
+          "expr": "sum(max_over_time({container=~\"whisper-worker.*\"} |= \"Transcription progress\" | pattern \"<_>Transcription progress: <segments> segments <_>\" | unwrap segments [$__interval]))",
+          "legendFormat": "Processed Segments Progression"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "expr": "sum(flower_worker_number_of_currently_executing_tasks) or vector(0)",
+          "legendFormat": "Active Tasks"
+        }
+      ],
+      "title": "Task Activity vs Segment Processing Progression",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 29
       },
       "id": 101,
       "panels": [],
@@ -681,7 +790,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "id": 10,
       "options": {
@@ -770,7 +879,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 30
       },
       "id": 11,
       "options": {
@@ -823,7 +932,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 37
       },
       "id": 102,
       "panels": [],
@@ -866,7 +975,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 30
+        "y": 38
       },
       "id": 20,
       "options": {
@@ -924,7 +1033,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 30
+        "y": 38
       },
       "id": 21,
       "options": {
@@ -982,7 +1091,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 30
+        "y": 38
       },
       "id": 22,
       "options": {
@@ -1048,7 +1157,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 30
+        "y": 38
       },
       "id": 23,
       "options": {
@@ -1136,7 +1245,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 34
+        "y": 42
       },
       "id": 24,
       "options": {
@@ -1240,7 +1349,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 34
+        "y": 42
       },
       "id": 25,
       "options": {
@@ -1276,7 +1385,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 49
       },
       "id": 103,
       "panels": [],
@@ -1311,7 +1420,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 42
+        "y": 50
       },
       "id": 30,
       "options": {
@@ -1369,7 +1478,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 42
+        "y": 50
       },
       "id": 31,
       "options": {
@@ -1427,7 +1536,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 42
+        "y": 50
       },
       "id": 32,
       "options": {
@@ -1485,7 +1594,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 42
+        "y": 50
       },
       "id": 33,
       "options": {
@@ -1573,7 +1682,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 46
+        "y": 54
       },
       "id": 34,
       "options": {
@@ -1670,7 +1779,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 46
+        "y": 54
       },
       "id": 35,
       "options": {
@@ -1706,7 +1815,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 53
+        "y": 61
       },
       "id": 104,
       "panels": [],
@@ -1751,7 +1860,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 54
+        "y": 62
       },
       "id": 40,
       "options": {
@@ -1817,7 +1926,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 54
+        "y": 62
       },
       "id": 41,
       "options": {
@@ -1873,7 +1982,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 54
+        "y": 62
       },
       "id": 42,
       "options": {
@@ -1931,7 +2040,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 54
+        "y": 62
       },
       "id": 43,
       "options": {
@@ -2021,7 +2130,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 67
       },
       "id": 44,
       "options": {
@@ -2118,7 +2227,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 67
       },
       "id": 45,
       "options": {
@@ -2215,7 +2324,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 66
+        "y": 74
       },
       "id": 46,
       "options": {
@@ -2292,7 +2401,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 66
+        "y": 74
       },
       "id": 47,
       "options": {
