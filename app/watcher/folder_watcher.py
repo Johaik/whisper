@@ -107,16 +107,16 @@ class FolderWatcher:
 
     def scan_folder(self) -> list[Path]:
         """
-        Scan folder for audio files.
+        Scan folder for audio files recursively.
 
         Returns:
             List of audio file paths
         """
-        return [f for f in self.folder.iterdir() if f.is_file() and f.suffix.lower() in self.audio_extensions]
+        return [f for f in self.folder.rglob("*") if f.is_file() and f.suffix.lower() in self.audio_extensions]
 
     def scan_source_folder(self) -> list[Path]:
         """
-        Scan source folder for audio files.
+        Scan source folder for audio files recursively.
 
         Returns:
             List of audio file paths in source folder
@@ -124,7 +124,7 @@ class FolderWatcher:
         if not self.source_folder or not self.source_folder.exists():
             return []
         
-        return [f for f in self.source_folder.iterdir() if f.is_file() and f.suffix.lower() in self.audio_extensions]
+        return [f for f in self.source_folder.rglob("*") if f.is_file() and f.suffix.lower() in self.audio_extensions]
 
     def get_pending_count_in_folder(self) -> int:
         """
@@ -140,22 +140,23 @@ class FolderWatcher:
         pending = 0
         session = SyncSessionLocal()
         try:
-            # 1. Check by name in batches (faster)
-            file_names = [f.name for f in audio_files]
-            existing_names = set()
+            # 1. Check by path (faster than hashing everything)
+            # Map absolute path strings
+            file_paths = [str(f.absolute()) for f in audio_files]
+            existing_paths = set()
             batch_size = 500
 
-            for i in range(0, len(file_names), batch_size):
-                batch = file_names[i:i + batch_size]
+            for i in range(0, len(file_paths), batch_size):
+                batch = file_paths[i:i + batch_size]
                 if not batch:
                     continue
-                results = session.query(Recording.file_name).filter(
-                    Recording.file_name.in_(batch)
+                results = session.query(Recording.file_path).filter(
+                    Recording.file_path.in_(batch)
                 ).all()
-                existing_names.update(r[0] for r in results)
+                existing_paths.update(r[0] for r in results)
 
-            # Identify candidates that passed the name check
-            candidates = [f for f in audio_files if f.name not in existing_names]
+            # Identify candidates that passed the path check
+            candidates = [f for f in audio_files if str(f.absolute()) not in existing_paths]
 
             if not candidates:
                 return 0
@@ -163,9 +164,11 @@ class FolderWatcher:
             # 2. Check by hash for remaining candidates
             candidate_hashes = {}
             for f in candidates:
-                # This might raise an exception if file is unreadable, consistent with original behavior
-                h = compute_file_hash(str(f))
-                candidate_hashes[f] = h
+                try:
+                    h = compute_file_hash(str(f))
+                    candidate_hashes[f] = h
+                except Exception as e:
+                    logger.warning(f"Cannot compute hash for {f}: {e}")
 
             hashes_to_check = list(candidate_hashes.values())
             existing_hashes = set()
@@ -181,7 +184,7 @@ class FolderWatcher:
                     existing_hashes.update(r[0] for r in results)
 
             for f in candidates:
-                if candidate_hashes[f] not in existing_hashes:
+                if f in candidate_hashes and candidate_hashes[f] not in existing_hashes:
                     pending += 1
 
         finally:
@@ -194,7 +197,7 @@ class FolderWatcher:
         Sync files from source folder to calls folder.
         
         Only copies files that:
-        1. Don't already exist in calls folder (by name)
+        1. Don't already exist in calls folder (by relative path)
         2. Haven't been processed yet (not in database by hash)
         
         Returns:
@@ -207,26 +210,26 @@ class FolderWatcher:
             logger.warning(f"Source folder does not exist: {self.source_folder}")
             return 0
         
-        # Get files in calls folder and source folder
-        calls_files = {f.name for f in self.scan_folder()}
+        # Get files in calls folder (relative paths)
+        calls_files = {str(f.relative_to(self.folder)) for f in self.scan_folder()}
         source_files = self.scan_source_folder()
         
         # Get files that are already processed (in database)
         processed_hashes: set[str] = set()
-        processed_names: set[str] = set()
         session = SyncSessionLocal()
         try:
-            recordings = session.query(Recording.file_hash, Recording.file_name).all()
+            # We rely on hash for deduplication across different locations/filenames
+            recordings = session.query(Recording.file_hash).all()
             processed_hashes = {r.file_hash for r in recordings}
-            processed_names = {r.file_name for r in recordings}
         finally:
             session.close()
         
-        # Find files to sync (not in calls folder)
+        # Find files to sync
         candidates: list[Path] = []
         for source_file in source_files:
-            if source_file.name not in calls_files and source_file.name not in processed_names:
-                # Check if already processed by hash (in case filename changed but content is same)
+            rel_path = str(source_file.relative_to(self.source_folder))
+            if rel_path not in calls_files:
+                # Check if already processed by hash
                 try:
                     file_hash = compute_file_hash(str(source_file))
                     if file_hash not in processed_hashes:
@@ -246,13 +249,16 @@ class FolderWatcher:
         
         copied = 0
         for source_file in batch:
-            dest_path = self.folder / source_file.name
+            rel_path = source_file.relative_to(self.source_folder)
+            dest_path = self.folder / rel_path
             try:
+                # Ensure destination subdirectory exists
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_file, dest_path)
-                logger.info(f"Copied: {source_file.name}")
+                logger.info(f"Copied: {rel_path}")
                 copied += 1
             except Exception as e:
-                logger.error(f"Failed to copy {source_file.name}: {e}")
+                logger.error(f"Failed to copy {rel_path}: {e}")
         
         return copied
 
@@ -291,15 +297,15 @@ class FolderWatcher:
             return 0
 
         all_hashes = [info["hash"] for info in file_info.values()]
-        all_names = [fp.name for fp in file_info.keys()]
+        # Use absolute paths for DB check
+        all_paths = [str(fp.absolute()) for fp in file_info.keys()]
 
         session = SyncSessionLocal()
         queued_count = 0
         try:
             # 2. Check existing recordings
-            # Chunk queries to avoid limit
             existing_hashes = set()
-            existing_names = set()
+            existing_paths = set()
 
             chunk_size = 500
             for i in range(0, len(all_hashes), chunk_size):
@@ -308,11 +314,11 @@ class FolderWatcher:
                     res = session.query(Recording.file_hash).filter(Recording.file_hash.in_(chunk)).all()
                     existing_hashes.update(r.file_hash for r in res)
 
-            for i in range(0, len(all_names), chunk_size):
-                chunk = all_names[i:i+chunk_size]
+            for i in range(0, len(all_paths), chunk_size):
+                chunk = all_paths[i:i+chunk_size]
                 if chunk:
-                    res = session.query(Recording.file_name).filter(Recording.file_name.in_(chunk)).all()
-                    existing_names.update(r.file_name for r in res)
+                    res = session.query(Recording.file_path).filter(Recording.file_path.in_(chunk)).all()
+                    existing_paths.update(r.file_path for r in res)
 
             # 3. Filter and Add
             to_add = []
@@ -320,12 +326,14 @@ class FolderWatcher:
                 if info["hash"] in existing_hashes:
                     logger.debug(f"File {fp.name} already in database by hash")
                     continue
-                if fp.name in existing_names:
-                    logger.debug(f"File {fp.name} already in database by name")
+                
+                abs_path = str(fp.absolute())
+                if abs_path in existing_paths:
+                    logger.debug(f"File {abs_path} already in database by path")
                     continue
 
                 recording = Recording(
-                    file_path=str(fp.absolute()),
+                    file_path=abs_path,
                     file_name=fp.name,
                     file_hash=info["hash"],
                     file_size=info["size"],
@@ -335,17 +343,15 @@ class FolderWatcher:
 
                 # Update sets for intra-batch deduplication
                 existing_hashes.add(info["hash"])
-                existing_names.add(fp.name)
+                existing_paths.add(abs_path)
 
             if to_add:
                 session.add_all(to_add)
                 session.commit()
-                # session.refresh() is expensive for list, avoiding unless needed.
-                # We don't use the IDs immediately here, just counting.
-                # But logging IDs is nice.
                 for r in to_add:
                      logger.info(f"Queued new file: {r.file_name} (id={r.id})")
                 queued_count = len(to_add)
+
 
         except Exception as e:
             logger.error(f"Error processing batch: {e}")

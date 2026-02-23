@@ -309,7 +309,7 @@
           
           Log "Total files in source: $($allFiles.Count)"
           
-          # Load already copied files (by filename)
+          # Load already copied files (by relative path)
           $copied = @{}
           if (Test-Path $CopiedLog) {
             # Use -Unique to handle any existing bloat while loading
@@ -317,8 +317,11 @@
           }
           Log "Already copied (unique): $($copied.Count)"
           
-          # Find files not yet copied
-          $pending = $allFiles | Where-Object { -not $copied.ContainsKey($_.Name) }
+          # Find files not yet copied (use relative path as key)
+          $pending = $allFiles | Where-Object { 
+            $relPath = $_.FullName.Replace($Source, "").TrimStart("\")
+            -not $copied.ContainsKey($relPath) 
+          }
           Log "Pending in source: $($pending.Count)"
           
           if ($pending.Count -eq 0) {
@@ -333,12 +336,17 @@
           $copiedCount = 0
           foreach ($file in $batch) {
             try {
-              if (-not $copied.ContainsKey($file.Name)) {
-                Copy-Item $file.FullName -Destination $Dest -Force
-                Add-Content $CopiedLog $file.Name -Encoding UTF8
-                $copied[$file.Name] = $true
+              $relPath = $file.FullName.Replace($Source, "").TrimStart("\")
+              if (-not $copied.ContainsKey($relPath)) {
+                $destPath = Join-Path $Dest $relPath
+                $destDir = Split-Path $destPath -Parent
+                if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+                
+                Copy-Item $file.FullName -Destination $destPath -Force
+                Add-Content $CopiedLog $relPath -Encoding UTF8
+                $copied[$relPath] = $true
                 $copiedCount++
-                Log "  [$copiedCount/$($batch.Count)] $($file.Name)"
+                Log "  [$copiedCount/$($batch.Count)] $relPath"
               }
             } catch {
               Log "  ERROR copying $($file.Name): $_" Red

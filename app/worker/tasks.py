@@ -391,7 +391,13 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
 
         # 2) Ensure PROCESSING and retry_count (enqueue_pending_recordings sets PROCESSING before .delay; no-op if already set)
         recording.status = RecordingStatus.PROCESSING
-        recording.retry_count = self.request.retries
+        
+        # Only set retry_count if it's a Celery retry, or if it's 0 and currently null in DB.
+        # This prevents resetting the count if it was incremented by stuck recovery (beat).
+        celery_retry_count = self.request.retries
+        if celery_retry_count > 0 or recording.retry_count is None:
+            recording.retry_count = celery_retry_count
+            
         session.commit()
 
         file_path = recording.file_path

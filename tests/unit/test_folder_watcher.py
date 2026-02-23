@@ -341,38 +341,40 @@ class TestGetPendingCount:
         mock_session_cls: MagicMock,
         tmp_path: Path
     ) -> None:
-        """Test that pending count uses batching and correct precedence."""
+        """Test that pending count uses batching and correct precedence (path then hash)."""
         # Setup
         watcher = FolderWatcher(folder=tmp_path)
 
         # Create 3 files
-        files = ["f1.mp3", "f2.mp3", "f3.mp3"]
-        for f in files:
-            (tmp_path / f).touch()
+        f1 = tmp_path / "f1.mp3"
+        f2 = tmp_path / "f2.mp3"
+        f3 = tmp_path / "f3.mp3"
+        f1.touch()
+        f2.touch()
+        f3.touch()
 
         # Mock session
         session = MagicMock()
         mock_session_cls.return_value = session
 
-        # f1: exists by name
+        # f1: exists by path
         # f2: exists by hash
         # f3: new
 
         mock_hash.side_effect = lambda x: f"hash_{Path(x).name}"
 
-        # First query result: existing names (f1)
+        # First query result: existing paths (f1)
         # Second query result: existing hashes (f2)
-        # We need to structure the mock to return these results sequentially for .all() calls
         session.query.return_value.filter.return_value.all.side_effect = [
-            [("f1.mp3",)],       # Names found
-            [("hash_f2.mp3",)]   # Hashes found
+            [(str(f1.absolute()),)],       # Paths found
+            [("hash_f2.mp3",)]             # Hashes found
         ]
 
         count = watcher.get_pending_count_in_folder()
 
         assert count == 1 # Only f3 is pending
 
-        # Verify that compute_file_hash was NOT called for f1 (since it was found by name)
+        # Verify that compute_file_hash was NOT called for f1 (since it was found by path)
         called_paths = [Path(c[0][0]).name for c in mock_hash.call_args_list]
         assert "f1.mp3" not in called_paths
         assert "f2.mp3" in called_paths
