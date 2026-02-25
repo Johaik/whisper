@@ -170,6 +170,7 @@ class HealthResponse(BaseModel):
     version: str
     database: str
     redis: str
+    storage: str
     workers: int | None = None
 
 

@@ -57,10 +57,6 @@ def _set_processing_step(session: Session, recording: Recording, step: str) -> N
     recording.processing_step = step
     recording.processing_step_started_at = datetime.now(timezone.utc)
     session.commit()
-    """Update the current processing step in the database."""
-    recording.processing_step = step
-    recording.processing_step_started_at = datetime.now(timezone.utc)
-    session.commit()
 
 
 def _run_heartbeat(stop_event: threading.Event, recording_id: uuid.UUID, interval: int) -> None:
