@@ -8,6 +8,10 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
+# Ansible Venv (for reliable networking on Mac)
+ANSIBLE_VENV := ansible_venv
+ANSIBLE_PLAYBOOK := $(ANSIBLE_VENV)/bin/ansible-playbook
+
 # Token file path
 TOKEN_FILE := ansible/.ghcr_token
 
@@ -109,11 +113,11 @@ deploy:
 		exit 1; \
 	fi
 	@echo "Deploying to Windows..."
-	cd ansible && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ansible-playbook deploy.yaml
+	cd ansible && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ../$(ANSIBLE_PLAYBOOK) deploy.yaml
 
 status:
 	@echo "Checking Windows deployment status..."
-	@cd ansible && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ansible-playbook status.yaml
+	@cd ansible && OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ../$(ANSIBLE_PLAYBOOK) status.yaml
 
 # ==========================================
 # Monitoring

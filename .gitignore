@@ -25,6 +25,7 @@ venv/
 ENV/
 env/
 .venv/
+ansible_venv/
 
 # IDE
 .idea/
