@@ -24,6 +24,7 @@ class GoogleContactsService:
         """Initialize the Google Contacts service."""
         self._service = None
         self._contacts_cache: dict[str, Optional[str]] = {}
+        self._contacts_suffix_cache: dict[str, str] = {}
         self._all_contacts_loaded = False
 
     def _get_credentials(self) -> Optional[Credentials]:
@@ -104,6 +105,9 @@ class GoogleContactsService:
                                 normalized = self._normalize_phone_for_comparison(phone_value)
                                 if normalized:
                                     self._contacts_cache[normalized] = display_name
+                                    for length in [8, 7, 6]:
+                                        if len(normalized) >= length:
+                                            self._contacts_suffix_cache[normalized[-length:]] = display_name
 
                 page_token = results.get('nextPageToken')
                 if not page_token:
@@ -147,9 +151,8 @@ class GoogleContactsService:
         for length in [8, 7, 6]:
             if len(normalized) >= length:
                 short = normalized[-length:]
-                for cached_phone, name in self._contacts_cache.items():
-                    if cached_phone.endswith(short):
-                        return name
+                if short in self._contacts_suffix_cache:
+                    return self._contacts_suffix_cache[short]
 
         return None
 
