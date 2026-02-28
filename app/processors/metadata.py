@@ -93,7 +93,8 @@ def extract_metadata(audio_path: str) -> AudioMetadata:
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"ffprobe timed out for {audio_path}")
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Failed to parse ffprobe output: {e}")
+        logger.error(f"Failed to parse ffprobe output: {e}")
+        raise RuntimeError(f"Failed to parse ffprobe output: {e}") from e
 
     # Extract format info
     format_info = probe_data.get("format", {})
