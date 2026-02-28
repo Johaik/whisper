@@ -389,11 +389,11 @@ class TestGetPendingCount:
         tmp_path: Path
     ) -> None:
         """Test that large file lists are batched correctly."""
-        # Setup with enough files to trigger batching (batch size is 500)
+        # Setup with enough files to trigger batching (batch size is 10000)
         watcher = FolderWatcher(folder=tmp_path)
 
-        # Create 550 files
-        for i in range(550):
+        # Create 10050 files (just enough to exceed batch limit by 50)
+        for i in range(10050):
             (tmp_path / f"file_{i}.mp3").touch()
 
         session = MagicMock()
@@ -405,7 +405,7 @@ class TestGetPendingCount:
 
         watcher.get_pending_count_in_folder()
 
-        # 550 files / 500 batch size = 2 batches for names
+        # 10050 files / 10000 batch size = 2 batches for names
         # 2 batches for hashes (since no names found)
         # Total 4 calls to all()
         assert session.query.return_value.filter.return_value.all.call_count == 4

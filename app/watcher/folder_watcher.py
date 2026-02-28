@@ -144,7 +144,7 @@ class FolderWatcher:
             # Map absolute path strings
             file_paths = [str(f.absolute()) for f in audio_files]
             existing_paths = set()
-            batch_size = 500
+            batch_size = 10000
 
             for i in range(0, len(file_paths), batch_size):
                 batch = file_paths[i:i + batch_size]
@@ -307,7 +307,7 @@ class FolderWatcher:
             existing_hashes = set()
             existing_paths = set()
 
-            chunk_size = 500
+            chunk_size = 10000
             for i in range(0, len(all_hashes), chunk_size):
                 chunk = all_hashes[i:i+chunk_size]
                 if chunk:
