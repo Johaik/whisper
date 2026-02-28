@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -75,13 +75,32 @@ async def health_check(
         redis_status = "error"
         workers = None
 
-    overall = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
+    # Check storage
+    try:
+        calls_dir = Path(settings.calls_dir).resolve()
+        if calls_dir.exists() and calls_dir.is_dir():
+            # Check write permission
+            test_file = calls_dir / f".health_check_{uuid4()}"
+            try:
+                test_file.touch()
+                test_file.unlink()
+                storage_status = "ok"
+            except Exception:
+                storage_status = "read_only"
+        else:
+            storage_status = "error"
+    except Exception as e:
+        logger.error(f"Storage health check failed: {e}")
+        storage_status = "error"
+
+    overall = "ok" if db_status == "ok" and redis_status == "ok" and storage_status == "ok" else "degraded"
 
     return HealthResponse(
         status=overall,
         version=__version__,
         database=db_status,
         redis=redis_status,
+        storage=storage_status,
         workers=workers,
     )
 
