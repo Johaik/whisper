@@ -100,29 +100,41 @@ def compute_analytics(
     speaker_talk_times: dict[str, float] = {}
     speaker_turns = 0
     last_speaker: str | None = None
+    segment_lengths: list[float] = []
 
     for seg in sorted_segments:
+        duration = seg.end - seg.start
+        segment_lengths.append(round(duration, 2))
+
         if seg.speaker:
             speakers.add(seg.speaker)
-            duration = seg.end - seg.start
             speaker_talk_times[seg.speaker] = speaker_talk_times.get(seg.speaker, 0) + duration
 
             if seg.speaker != last_speaker:
                 speaker_turns += 1
                 last_speaker = seg.speaker
 
-    # Count long silences
-    long_silence_count = sum(1 for s in silence_times if s >= long_silence_threshold)
+    # Count long silences and build silence lists
+    long_silence_count = 0
+    silence_lengths: list[float] = []
+    long_silences: list[float] = []
+
+    for s in silence_times:
+        rounded_s = round(s, 2)
+        silence_lengths.append(rounded_s)
+        if s >= long_silence_threshold:
+            long_silence_count += 1
+            long_silences.append(rounded_s)
 
     # Build analytics JSON
     analytics_json: dict[str, Any] = {
         "speech_time_sec": round(total_speech_time, 2),
         "silence_time_sec": round(total_silence_time, 2),
         "effective_duration_sec": round(effective_duration, 2),
-        "segment_lengths": [round(seg.end - seg.start, 2) for seg in sorted_segments],
-        "silence_lengths": [round(s, 2) for s in silence_times],
+        "segment_lengths": segment_lengths,
+        "silence_lengths": silence_lengths,
         "speaker_talk_times": {k: round(v, 2) for k, v in speaker_talk_times.items()},
-        "long_silences": [round(s, 2) for s in silence_times if s >= long_silence_threshold],
+        "long_silences": long_silences,
     }
 
     logger.info(
