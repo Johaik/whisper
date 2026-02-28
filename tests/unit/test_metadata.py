@@ -142,14 +142,21 @@ class TestExtractMetadata:
         with pytest.raises(RuntimeError, match="timed out"):
             extract_metadata(str(temp_audio_file))
 
+    @patch("app.processors.metadata.logger")
     @patch("app.processors.metadata.subprocess.run")
-    def test_invalid_json_raises_error(self, mock_run, temp_audio_file):
+    def test_invalid_json_raises_error(self, mock_run, mock_logger, temp_audio_file):
         """Test that invalid JSON from ffprobe raises error."""
         mock_run.return_value = MagicMock(
             stdout="not valid json",
             returncode=0,
         )
 
-        with pytest.raises(RuntimeError, match="Failed to parse"):
+        with pytest.raises(RuntimeError, match="Failed to parse") as exc_info:
             extract_metadata(str(temp_audio_file))
 
+        # Verify error was logged
+        mock_logger.error.assert_called_once()
+        assert "Failed to parse ffprobe output" in mock_logger.error.call_args[0][0]
+
+        # Verify exception chaining
+        assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
