@@ -59,8 +59,9 @@ def parse_recording_filename(filename: str) -> CallerMetadata:
         if is_phone_number(identifier):
             metadata.raw_phone = identifier
             metadata.phone_number = normalize_phone_number(identifier)
-        else:
+        elif identifier and identifier.lower() != "call recording":
             # It's a contact name from the phone's call log
+            # But only if it's not empty and not the literal "Call recording"
             metadata.caller_name = identifier
 
         # Parse datetime (YYMMDD_HHMMSS)

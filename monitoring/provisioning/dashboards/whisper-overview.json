@@ -82,7 +82,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "((sum(flower_events_total{type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{type=\"task-failed\"}) or vector(0)) + abs((sum(flower_events_total{type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{type=\"task-failed\"}) or vector(0)))) / 2",
+          "expr": "((sum(flower_events_total{task=\"process_recording\", type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-failed\"}) or vector(0)) + abs((sum(flower_events_total{task=\"process_recording\", type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-failed\"}) or vector(0)))) / 2",
           "legendFormat": "Pending"
         }
       ],
@@ -140,7 +140,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum(flower_events_total{type=\"task-succeeded\"}) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}[$__range])) or vector(0)",
           "legendFormat": "Completed"
         }
       ],
@@ -202,7 +202,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum(flower_events_total{type=\"task-failed\"}) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-failed\"}[$__range])) or vector(0)",
           "legendFormat": "Failed"
         }
       ],
@@ -411,7 +411,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "(sum(rate(flower_task_runtime_seconds_sum[5m])) / sum(rate(flower_task_runtime_seconds_count[5m]))) or vector(0)",
+          "expr": "(sum(rate(flower_task_runtime_seconds_sum{task=\"process_recording\"}[5m])) / sum(rate(flower_task_runtime_seconds_count{task=\"process_recording\"}[5m]))) or vector(0)",
           "legendFormat": "Avg Task Duration"
         }
       ],
@@ -499,7 +499,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum(increase(flower_events_total{type=\"task-succeeded\"}[1h])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}[1h])) or vector(0)",
           "legendFormat": "Succeeded"
         },
         {
@@ -507,7 +507,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum(increase(flower_events_total{type=\"task-failed\"}[1h])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-failed\"}[1h])) or vector(0)",
           "legendFormat": "Failed"
         }
       ],
@@ -595,7 +595,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum(increase(flower_events_total{type=\"task-succeeded\"}[$__rate_interval])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}[$__rate_interval])) or vector(0)",
           "legendFormat": "Tasks Succeeded (Celery)"
         },
         {
