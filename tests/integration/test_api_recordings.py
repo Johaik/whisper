@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -341,4 +342,82 @@ class TestReprocessRecording:
         await async_session.refresh(recording)
         assert recording.status == RecordingStatus.QUEUED
         assert recording.error_message is None
+
+
+class TestDiarizeRecordings:
+    """Tests for rediarization endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_rediarize_specific_recording(self, async_client, auth_headers, async_session):
+        """Test triggering rediarization for a specific recording."""
+        recording_id = uuid.uuid4()
+        recording = Recording(
+            id=recording_id,
+            file_path="/data/calls/test.m4a",
+            file_name="test.m4a",
+            file_hash="hashrediarize",
+            file_size=1000,
+            status=RecordingStatus.DONE,
+        )
+        async_session.add(recording)
+        await async_session.commit()
+
+        with patch("app.api.routes.rediarize_recording.delay") as mock_delay:
+            mock_delay.return_value.id = "task-id-123"
+            
+            response = await async_client.post(
+                f"/api/v1/recordings/{recording_id}/rediarize",
+                headers=auth_headers,
+                json={"num_speakers": 2, "force": True}
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["task_id"] == "task-id-123"
+            mock_delay.assert_called_once_with(
+                str(recording_id),
+                force=True,
+                num_speakers=2
+            )
+
+    @pytest.mark.asyncio
+    async def test_rediarize_pending(self, async_client, auth_headers):
+        """Test triggering rediarization for pending recordings."""
+        with patch("app.api.routes.enqueue_rediarization_tasks.delay") as mock_delay:
+            mock_delay.return_value.id = "batch-task-id"
+            
+            response = await async_client.post(
+                "/api/v1/recordings/rediarize/pending",
+                headers=auth_headers,
+                json={"force": False}
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["task_id"] == "batch-task-id"
+            mock_delay.assert_called_once_with(
+                recording_ids=None,
+                force=False
+            )
+
+    @pytest.mark.asyncio
+    async def test_rediarize_specific_list(self, async_client, auth_headers):
+        """Test triggering rediarization for a specific list of IDs."""
+        ids = [uuid.uuid4(), uuid.uuid4()]
+        with patch("app.api.routes.enqueue_rediarization_tasks.delay") as mock_delay:
+            mock_delay.return_value.id = "list-task-id"
+            
+            response = await async_client.post(
+                "/api/v1/recordings/rediarize/pending",
+                headers=auth_headers,
+                json={"recording_ids": [str(rid) for rid in ids], "force": True}
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["task_id"] == "list-task-id"
+            mock_delay.assert_called_once_with(
+                recording_ids=[str(rid) for rid in ids],
+                force=True
+            )
 

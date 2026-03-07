@@ -52,5 +52,9 @@ celery_app.conf.beat_schedule = {
         "task": "enqueue_pending_recordings",
         "schedule": crontab(minute="*/2"),  # every 2 minutes
     },
+    "enqueue-pending-rediarization": {
+        "task": "enqueue_rediarization_tasks",
+        "schedule": crontab(minute="0", hour="*"),  # every hour at minute 0
+    },
 }
 

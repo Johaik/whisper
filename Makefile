@@ -172,6 +172,10 @@ test-integration: ensure-venv
 # Utilities
 # ==========================================
 
+rediarize: ensure-venv
+	@echo "Enqueuing pending recordings for re-diarization..."
+	$(PYTHON) scripts/rediarize.py --all-pending
+
 clean:
 	@echo "Stopping and removing local containers..."
 	docker compose down --remove-orphans

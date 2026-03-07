@@ -22,8 +22,14 @@
           Write-Output "=== RECORDINGS BY STATUS ==="
           docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;" 2>$null
           Write-Output ""
-          Write-Output "=== ENRICHMENTS TABLE COLUMNS (diarization_pending/skip_reason) ==="
+          Write-Output "=== ENRICHMENTS TABLE COLUMNS (diarization status) ==="
           docker exec whisper-postgres psql -U whisper -d whisper -c "\d enrichments" 2>$null | Select-String "diarization"
+          Write-Output ""
+          Write-Output "=== DIARIZATION RETRY HOTSPOTS (retries > 0) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT id, recording_id, diarization_retry_count, diarization_skip_reason FROM enrichments WHERE diarization_retry_count > 0 ORDER BY diarization_retry_count DESC LIMIT 10;" 2>$null
+          Write-Output ""
+          Write-Output "=== PENDING DIARIZATION (sample 5) ==="
+          docker exec whisper-postgres psql -U whisper -d whisper -c "SELECT r.id, r.file_name, e.diarization_retry_count FROM recordings r JOIN enrichments e ON r.id = e.recording_id WHERE r.status = 'done' AND e.diarization_enabled = false AND e.diarization_retry_count < 3 LIMIT 5;" 2>$null
           Write-Output ""
           Write-Output "=== DONE RECORDINGS WITH TRANSCRIPT (sample 3) ==="
           docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT r.id, r.file_name, r.status, (SELECT COUNT(*) FROM transcripts t WHERE t.recording_id = r.id) as tx_count FROM recordings r WHERE r.status = 'done' LIMIT 3;" 2>$null

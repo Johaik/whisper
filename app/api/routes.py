@@ -12,6 +12,9 @@ from sqlalchemy.orm import selectinload
 
 from app import __version__
 from app.api.schemas import (
+    BatchDiarizeRequest,
+    DiarizeRequest,
+    DiarizeResponse,
     EnrichmentDetail,
     HealthResponse,
     PingResponse,
@@ -30,6 +33,7 @@ from app.config import Settings, get_settings
 from app.db.models import Enrichment, Recording, RecordingStatus, Transcript
 from app.db.session import get_async_session
 from app.processors.metadata import compute_file_hash
+from app.worker.tasks import enqueue_rediarization_tasks, rediarize_recording
 
 logger = logging.getLogger(__name__)
 
@@ -459,5 +463,43 @@ async def reprocess_recording(
         recording_id=recording.id,
         status="queued",
         message="Recording queued for reprocessing",
+    )
+
+
+@router.post("/recordings/{recording_id}/rediarize", response_model=DiarizeResponse)
+async def rediarize_recording_api(
+    recording_id: UUID,
+    request: DiarizeRequest,
+    _: AuthDep,
+) -> DiarizeResponse:
+    """Trigger re-diarization for a specific recording."""
+    task = rediarize_recording.delay(
+        str(recording_id),
+        force=request.force,
+        num_speakers=request.num_speakers
+    )
+    
+    return DiarizeResponse(
+        task_id=task.id,
+        message=f"Re-diarization task {task.id} enqueued for recording {recording_id}",
+    )
+
+
+@router.post("/recordings/rediarize/pending", response_model=DiarizeResponse)
+async def rediarize_pending_api(
+    request: BatchDiarizeRequest,
+    _: AuthDep,
+) -> DiarizeResponse:
+    """Trigger re-diarization for pending recordings or a specific list."""
+    recording_ids = [str(rid) for rid in request.recording_ids] if request.recording_ids else None
+    
+    task = enqueue_rediarization_tasks.delay(
+        recording_ids=recording_ids,
+        force=request.force
+    )
+    
+    return DiarizeResponse(
+        task_id=task.id,
+        message=f"Batch re-diarization task {task.id} enqueued",
     )
 

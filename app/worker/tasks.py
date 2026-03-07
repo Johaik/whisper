@@ -1,6 +1,7 @@
 """Celery task definitions for audio processing."""
 
 import logging
+import os
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -763,6 +764,180 @@ def enqueue_pending_recordings() -> dict[str, Any]:
         session.rollback()
         logger.exception(f"enqueue_pending_recordings failed: {e}")
         raise
+    finally:
+        session.close()
+
+
+@celery_app.task(bind=True, base=ProcessingTask, name="rediarize_recording")
+def rediarize_recording(self: Task, recording_id: str, force: bool = False, num_speakers: int | None = None) -> dict[str, Any]:
+    """Re-run diarization and analytics for a recording.
+
+    Used for recordings that were transcribed but skipped diarization (e.g. due to duration).
+    """
+    logger.info(f"Re-diarizing recording: {recording_id} (num_speakers={num_speakers})")
+
+    session = get_sync_session()
+    settings = get_settings()
+
+    try:
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        logger.error(f"Invalid UUID: {recording_id}")
+        return {"status": "error", "message": "Invalid UUID"}
+
+    try:
+        # Get the recording and associated data
+        recording = session.query(Recording).filter(Recording.id == rec_uuid).first()
+        if not recording:
+            logger.error(f"Recording not found: {recording_id}")
+            return {"status": "error", "message": "Recording not found"}
+
+        if recording.status != RecordingStatus.DONE and not force:
+            logger.warning(f"Recording {recording_id} is not DONE (status={recording.status}), skipping")
+            return {"status": "skipped", "message": "Recording not in DONE status"}
+
+        transcript = session.query(Transcript).filter(Transcript.recording_id == rec_uuid).first()
+        if not transcript or not transcript.segments_json:
+            logger.error(f"Transcript segments not found for recording: {recording_id}")
+            return {"status": "error", "message": "Transcript segments not found"}
+
+        enrichment = session.query(Enrichment).filter(Enrichment.recording_id == rec_uuid).first()
+        if not enrichment:
+            logger.error(f"Enrichment record not found for recording: {recording_id}")
+            return {"status": "error", "message": "Enrichment record not found"}
+
+        # Increment retry count immediately
+        enrichment.diarization_retry_count += 1
+        session.commit()
+
+        file_path = recording.file_path
+        if not os.path.exists(file_path):
+            logger.error(f"Audio file not found at {file_path}")
+            return {"status": "error", "message": "Audio file not found"}
+
+        # Step 1: Run diarization
+        # We use a large duration threshold or ignore it for manual re-diarization
+        logger.info(f"Running diarization for {recording_id}...")
+        
+        # Convert JSON segments back to TranscriptSegment objects
+        segments = [
+            TranscriptSegment(
+                start=s["start"],
+                end=s["end"],
+                text=s["text"],
+                speaker=s.get("speaker")
+            )
+            for s in transcript.segments_json
+        ]
+
+        # Force diarization by temporarily ignoring duration limit if force=True
+        # Actually, diarize_audio doesn't check limits, _run_diarization does.
+        # We call diarize_audio directly here.
+        diarization = diarize_audio(file_path, num_speakers=num_speakers)
+        
+        # Step 2: Assign speakers
+        segments = assign_speakers_to_transcript(segments, diarization)
+        speaker_count = diarization.speaker_count
+
+        # Step 3: Re-compute analytics
+        analytics = _compute_analytics_step(segments, recording.duration_sec)
+
+        # Step 4: Update database
+        transcript.segments_json = segments_to_json(segments)
+        
+        enrichment.speaker_count = speaker_count
+        enrichment.diarization_enabled = True
+        enrichment.diarization_pending = False
+        enrichment.diarization_skip_reason = None
+        
+        enrichment.total_speech_time = analytics.total_speech_time
+        enrichment.total_silence_time = analytics.total_silence_time
+        enrichment.talk_time_ratio = analytics.talk_time_ratio
+        enrichment.silence_ratio = analytics.silence_ratio
+        enrichment.segment_count = analytics.segment_count
+        enrichment.avg_segment_length = analytics.avg_segment_length
+        enrichment.speaker_turns = analytics.speaker_turns
+        enrichment.long_silence_count = analytics.long_silence_count
+        enrichment.long_silence_threshold_sec = analytics.long_silence_threshold_sec
+        enrichment.analytics_json = analytics.analytics_json
+
+        session.commit()
+        logger.info(f"Re-diarization complete for {recording_id}: {speaker_count} speakers found")
+
+        return {
+            "status": "success",
+            "recording_id": recording_id,
+            "speakers": speaker_count,
+            "turns": analytics.speaker_turns
+        }
+
+    except Exception as e:
+        logger.exception(f"Re-diarization failed for {recording_id}: {e}")
+        session.rollback()
+        return {"status": "error", "message": str(e)}
+    finally:
+        session.close()
+
+
+@celery_app.task(name="enqueue_rediarization_tasks")
+def enqueue_rediarization_tasks(recording_ids: list[str] = None, force: bool = False, num_speakers: int | None = None) -> dict[str, Any]:
+    """Enqueue recordings for re-diarization.
+    
+    If recording_ids is None, finds recordings missing successful diarization.
+    Skips recordings already in queue and those with many failures.
+    """
+    session = get_sync_session()
+    try:
+        # Get active rediarize tasks to avoid duplicates
+        known_ids = set()
+        try:
+            inspect = celery_app.control.inspect()
+            active = inspect.active()
+            if active:
+                for worker_tasks in active.values():
+                    for task in worker_tasks:
+                        if task.get("name") == "rediarize_recording" and task.get("args"):
+                            known_ids.add(str(task["args"][0]))
+            
+            reserved = inspect.reserved()
+            if reserved:
+                for worker_tasks in reserved.values():
+                    for task in worker_tasks:
+                        if task.get("name") == "rediarize_recording" and task.get("args"):
+                            known_ids.add(str(task["args"][0]))
+        except Exception as e:
+            logger.warning(f"Could not inspect Celery queue: {e}")
+
+        if recording_ids:
+            # Enqueue specific IDs (skip queue check if force=True)
+            ids_to_process = [rid for rid in recording_ids if force or rid not in known_ids]
+        else:
+            # Find all that need diarization:
+            # 1. status is DONE
+            # 2. diarization_enabled is False
+            # 3. diarization_retry_count is low (to avoid infinite loops on bad files)
+            # 4. Not currently in queue
+            from sqlalchemy import or_
+            pending = (
+                session.query(Recording.id)
+                .join(Enrichment)
+                .filter(Recording.status == RecordingStatus.DONE)
+                .filter(Enrichment.diarization_enabled == False)
+                .filter(Enrichment.diarization_retry_count < 3)
+                .all()
+            )
+            ids_to_process = [str(r.id) for r in pending if str(r.id) not in known_ids]
+
+        enqueued = 0
+        for rid in ids_to_process:
+            rediarize_recording.delay(rid, force=force, num_speakers=num_speakers)
+            enqueued += 1
+
+        logger.info(f"Enqueued {enqueued} recordings for re-diarization (filtered from {len(ids_to_process) if recording_ids else 'all pending'})")
+        return {"enqueued": enqueued, "skipped_active": len(known_ids)}
+    except Exception as e:
+        logger.exception(f"Failed to enqueue rediarization tasks: {e}")
+        return {"error": str(e)}
     finally:
         session.close()
 

@@ -188,3 +188,38 @@ class PingResponse(BaseModel):
     """Ping response."""
 
     status: str
+
+
+class DiarizeRequest(BaseModel):
+    """Request to trigger diarization for a specific recording."""
+
+    num_speakers: int | None = Field(
+        default=None,
+        ge=1,
+        le=10,
+        description="Optional: Number of speakers in the audio if known.",
+    )
+    force: bool = Field(
+        default=False,
+        description="Force re-diarization even if already done or not pending.",
+    )
+
+
+class BatchDiarizeRequest(BaseModel):
+    """Request to trigger diarization for multiple recordings."""
+
+    recording_ids: list[UUID] | None = Field(
+        default=None,
+        description="Optional: List of recording IDs to process. If None, processes all pending.",
+    )
+    force: bool = Field(
+        default=False,
+        description="Force re-diarization even if already done or not pending.",
+    )
+
+
+class DiarizeResponse(BaseModel):
+    """Response from diarization trigger."""
+
+    task_id: str
+    message: str

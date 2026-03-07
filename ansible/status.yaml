@@ -87,6 +87,23 @@
           }
           Write-Output ""
           
+          # Diarization Summary
+          Write-Output "┌─────────────────────────────────────────────────────────────┐"
+          Write-Output "│ DIARIZATION STATUS                                          │"
+          Write-Output "└─────────────────────────────────────────────────────────────┘"
+          try {
+            $pendingCount = docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT COUNT(*) FROM enrichments e JOIN recordings r ON r.id = e.recording_id WHERE r.status = 'done' AND e.diarization_enabled = false AND e.diarization_retry_count < 3;" 2>$null
+            $retryLimitCount = docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT COUNT(*) FROM enrichments WHERE diarization_retry_count >= 3 AND diarization_enabled = false;" 2>$null
+            $completedCount = docker exec whisper-postgres psql -U whisper -d whisper -t -c "SELECT COUNT(*) FROM enrichments WHERE diarization_enabled = true;" 2>$null
+            
+            Write-Output ("  Pending Diarization : {0}" -f $pendingCount.Trim())
+            Write-Output ("  Completed           : {0}" -f $completedCount.Trim())
+            Write-Output ("  At Retry Limit      : {0}" -f $retryLimitCount.Trim())
+          } catch {
+            Write-Output "  Diarization status unavailable"
+          }
+          Write-Output ""
+          
           # Google Drive Sync Status
           Write-Output "┌─────────────────────────────────────────────────────────────┐"
           Write-Output "│ GOOGLE DRIVE SYNC                                           │"
