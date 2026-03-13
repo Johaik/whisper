@@ -196,30 +196,11 @@
     - name: Create docker-compose.override.yml for Windows paths
       ansible.windows.win_copy:
         content: |
-          # Windows-specific overrides for persistent storage
+          # Windows-specific overrides for local caching
           services:
-            postgres:
-              volumes:
-                - {{ win_app_dir }}\postgres-data:/var/lib/postgresql/data
-            
-            redis:
-              volumes:
-                - {{ win_app_dir }}\redis-data:/data
-            
-            api:
-              volumes:
-                - {{ win_app_dir }}\Calls:/data/calls:ro
-                - {{ win_app_dir }}\outputs:/data/outputs
-            
             worker:
               volumes:
-                - {{ win_app_dir }}\Calls:/data/calls:ro
-                - {{ win_app_dir }}\outputs:/data/outputs
                 - whisper_model_cache:/home/whisper/.cache
-            
-            watcher:
-              volumes:
-                - {{ win_app_dir }}\Calls:/data/calls:ro
           
           volumes:
             whisper_model_cache:

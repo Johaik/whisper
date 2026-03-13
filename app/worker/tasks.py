@@ -806,6 +806,11 @@ def rediarize_recording(self: Task, recording_id: str, force: bool = False, num_
             logger.error(f"Enrichment record not found for recording: {recording_id}")
             return {"status": "error", "message": "Enrichment record not found"}
 
+        # Early exit if already done (unless forced)
+        if enrichment.diarization_enabled and not force:
+            logger.info(f"Diarization already enabled for {recording_id}, skipping")
+            return {"status": "skipped", "message": "Diarization already enabled"}
+
         # Increment retry count immediately
         enrichment.diarization_retry_count += 1
         session.commit()

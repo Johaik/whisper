@@ -4,19 +4,21 @@ import json
 import uuid
 from dotenv import load_dotenv
 
+# Load from project .env or local .env
 load_dotenv()
 
-GRAFANA_URL = "https://johaik.grafana.net"
-GRAFANA_API_KEY = os.getenv("GRAFANA_API_KEY", "")
+# Defaults to the new cloud account provided by the user
+GRAFANA_URL = os.getenv("GRAFANA_URL", "https://johai.grafana.net")
+GRAFANA_API_KEY = os.getenv("GRAFANA_TOKEN", "")
 
 def upload_dashboard(filepath):
-    print(f"Uploading {filepath} to Grafana Cloud...")
-    with open(filepath, 'r') as f:
+    print(f"Uploading {filepath} to Grafana Cloud ({GRAFANA_URL})...")
+    with open(filepath, 'r', encoding='utf-8') as f:
         dashboard = json.load(f)
         
     dashboard['id'] = None
-    if 'uid' not in dashboard or not dashboard['uid']:
-        dashboard['uid'] = str(uuid.uuid4())[:8]
+    # We want to keep the UIDs consistent for cross-linking (grafanacloud-prom, etc)
+    # The UIDs in our files match the new Grafana Cloud UIDs.
 
     headers = {
         "Authorization": f"Bearer {GRAFANA_API_KEY}",
@@ -26,7 +28,7 @@ def upload_dashboard(filepath):
     payload = {
         "dashboard": dashboard,
         "overwrite": True,
-        "message": "Migrated from local provisioning"
+        "message": "Provisioned via whisper-pipeline"
     }
 
     resp = requests.post(f"{GRAFANA_URL}/api/dashboards/db", headers=headers, json=payload)
@@ -38,9 +40,18 @@ def upload_dashboard(filepath):
         print(resp.text)
 
 if __name__ == "__main__":
+    if not GRAFANA_API_KEY:
+        print("❌ GRAFANA_TOKEN not found in environment. Please set it in your .env file.")
+        exit(1)
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(script_dir)
     dashboards_dir = os.path.join(project_root, "monitoring/provisioning/dashboards")
+    
+    if not os.path.exists(dashboards_dir):
+        print(f"❌ Dashboards directory not found: {dashboards_dir}")
+        exit(1)
+
     for filename in os.listdir(dashboards_dir):
         if filename.endswith(".json"):
             filepath = os.path.join(dashboards_dir, filename)

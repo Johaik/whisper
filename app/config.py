@@ -58,6 +58,9 @@ class Settings(BaseSettings):
 
     # Worker settings
     worker_concurrency: int = 1
+    # Intra-op parallelism settings (for multi-core single task)
+    whisper_cpu_threads: int = 0  # 0 = auto (ctranslate2 default)
+    torch_threads: int = 0        # 0 = auto (torch default)
     # Task time limit (seconds). None or 0 = no limit (long processes allowed). Stuck = no heartbeat, not timeout.
     task_timeout_seconds: int | None = None
     task_max_retries: int = 3

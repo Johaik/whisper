@@ -95,6 +95,7 @@ ansible/inventory.ini
 Thumbs.db
 
 # Agent & Workspace internal
+.gemini/
 .agents/
 .cursor/
 .cursorrules

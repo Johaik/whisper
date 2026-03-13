@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: whisper
       POSTGRES_DB: whisper
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -24,7 +24,7 @@ services:
     container_name: whisper-redis
     restart: unless-stopped
     volumes:
-      - redis_data:/data
+      - ./redis-data:/data
     ports:
       - "6379:6379"
     healthcheck:
@@ -73,6 +73,7 @@ services:
     image: ghcr.io/johaik/whisper-worker:latest
     container_name: whisper-worker
     restart: unless-stopped
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-1}"]
     environment:
       - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
@@ -80,6 +81,7 @@ services:
       - API_TOKEN=${API_TOKEN}
       - CALLS_DIR=/data/calls
       - OUTPUT_DIR=/data/outputs
+      - CELERY_SEND_TASK_SENT_EVENT=true
       # Best accuracy settings for Hebrew transcription
       - MODEL_NAME=${MODEL_NAME:-ivrit-ai/whisper-large-v3-turbo-ct2}
       - DEVICE=cpu
@@ -89,6 +91,13 @@ services:
       - DIARIZATION_MAX_DURATION_SEC=${DIARIZATION_MAX_DURATION_SEC:-600}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
       - TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-}
+      # Multi-core single task processing
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+      - WHISPER_CPU_THREADS=${WHISPER_CPU_THREADS:-4}
+      - TORCH_THREADS=${TORCH_THREADS:-4}
+      # Intra-op parallelism for torch
+      - OMP_NUM_THREADS=${TORCH_THREADS:-4}
+      - MKL_NUM_THREADS=${TORCH_THREADS:-4}
       # Google Contacts for caller name lookup
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -172,23 +181,22 @@ services:
   # Monitoring Stack (lightweight exporters)
   # ===========================================
 
-  # Flower - Celery monitoring UI and metrics
   flower:
-    image: mher/flower:2.0
+    image: ghcr.io/johaik/whisper-worker:latest
     container_name: whisper-flower
     restart: unless-stopped
+    command: [ "celery", "-A", "app.worker.celery_app", "flower", "--port=5555" ]
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - FLOWER_PERSISTENT=true
-      - FLOWER_DB=/data/flower.db
+      - DATABASE_URL=postgresql+asyncpg://whisper:whisper@postgres:5432/whisper
+      - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
+      - REDIS_URL=redis://redis:6379/0
+      - API_TOKEN=${API_TOKEN}
       - FLOWER_BASIC_AUTH=${FLOWER_AUTH:-admin:admin}
-      # Give workers time to respond to inspect (single worker often busy with long transcription)
-      - FLOWER_INSPECT_TIMEOUT=60000
-    volumes:
-      - flower_data:/data
+      - FLOWER_INSPECT_TIMEOUT=120000
     depends_on:
       redis:
         condition: service_healthy
@@ -222,7 +230,4 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
-  redis_data:
   model_cache:
-  flower_data:

@@ -26,7 +26,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -80,9 +80,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
-          "expr": "((sum(flower_events_total{task=\"process_recording\", type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-failed\"}) or vector(0)) + abs((sum(flower_events_total{task=\"process_recording\", type=\"task-received\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}) or vector(0)) - (sum(flower_events_total{task=\"process_recording\", type=\"task-failed\"}) or vector(0)))) / 2",
+          "expr": "sum(redis_key_length{key=\"celery\"}) or vector(0)",
           "legendFormat": "Pending"
         }
       ],
@@ -92,7 +92,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -138,9 +138,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
-          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=~\"$task\", type=\"task-succeeded\"}[$__range])) or vector(0)",
           "legendFormat": "Completed"
         }
       ],
@@ -150,7 +150,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -200,9 +200,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
-          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-failed\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=~\"$task\", type=\"task-failed\"}[$__range])) or vector(0)",
           "legendFormat": "Failed"
         }
       ],
@@ -212,7 +212,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -262,7 +262,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(flower_worker_online)",
           "legendFormat": "Workers"
@@ -274,7 +274,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -320,7 +320,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(flower_worker_number_of_currently_executing_tasks)",
           "legendFormat": "Active"
@@ -332,7 +332,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -409,9 +409,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
-          "expr": "(sum(rate(flower_task_runtime_seconds_sum{task=\"process_recording\"}[5m])) / sum(rate(flower_task_runtime_seconds_count{task=\"process_recording\"}[5m]))) or vector(0)",
+          "expr": "(sum(rate(flower_task_runtime_seconds_sum{task=~\"$task\"}[5m])) / sum(rate(flower_task_runtime_seconds_count{task=~\"$task\"}[5m]))) or vector(0)",
           "legendFormat": "Avg Task Duration"
         }
       ],
@@ -421,7 +421,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -497,17 +497,17 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
-          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}[1h])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=~\"$task\", type=\"task-succeeded\"}[1h])) or vector(0)",
           "legendFormat": "Succeeded"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
-          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-failed\"}[1h])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=~\"$task\", type=\"task-failed\"}[1h])) or vector(0)",
           "legendFormat": "Failed"
         }
       ],
@@ -517,7 +517,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -593,15 +593,15 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
-          "expr": "sum(increase(flower_events_total{task=\"process_recording\", type=\"task-succeeded\"}[$__rate_interval])) or vector(0)",
+          "expr": "sum(increase(flower_events_total{task=~\"$task\", type=\"task-succeeded\"}[$__rate_interval])) or vector(0)",
           "legendFormat": "Tasks Succeeded (Celery)"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(increase(pg_stat_user_tables_n_live_tup{relname=\"recordings\"}[$__rate_interval])) or vector(0)",
           "legendFormat": "Finished Recordings (DB)"
@@ -691,7 +691,7 @@
             "type": "loki",
             "uid": "grafanacloud-logs"
           },
-          "expr": "max_over_time({container=~\"whisper-worker.*\"} |= \"Transcription progress\" | regexp \"INFO/(?P<worker>ForkPoolWorker-\\\\d+)\\\\] Transcription progress: (?P<segments>\\\\d+) segment\" | unwrap segments | __error__=\"\" [$__interval]) by (worker)",
+          "expr": "max_over_time({container=~\"whisper-worker.*|whisper-worker\"} |= \"Transcription progress\" | regexp \"INFO/(?P<worker>ForkPoolWorker-\\\\d+)\\\\] Transcription progress: (?P<segments>\\\\d+) segment\" | unwrap segments | __error__=\"\" [$__interval]) by (worker)",
           "legendFormat": "{{worker}} Segments"
         }
       ],
@@ -714,7 +714,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -791,7 +791,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(http_requests_total{service=\"api\"}[5m])) by (handler)",
           "legendFormat": "{{handler}}"
@@ -803,7 +803,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -880,7 +880,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{service=\"api\"}[5m])) by (le))",
           "legendFormat": "p50"
@@ -888,7 +888,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"api\"}[5m])) by (le))",
           "legendFormat": "p95"
@@ -896,7 +896,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"api\"}[5m])) by (le))",
           "legendFormat": "p99"
@@ -921,7 +921,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -975,7 +975,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(pg_stat_activity_count{datname=\"whisper\"})",
           "legendFormat": "Connections"
@@ -987,7 +987,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1033,7 +1033,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "pg_database_size_bytes{datname=\"whisper\"}",
           "legendFormat": "Size"
@@ -1045,7 +1045,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1091,7 +1091,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(pg_stat_user_tables_n_live_tup{relname=\"recordings\"})",
           "legendFormat": "Recordings"
@@ -1103,7 +1103,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1157,7 +1157,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(pg_locks_count)",
           "legendFormat": "Locks"
@@ -1169,7 +1169,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1245,7 +1245,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(pg_stat_database_tup_inserted{datname=\"whisper\"}[5m]))",
           "legendFormat": "Inserts/s"
@@ -1253,7 +1253,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(pg_stat_database_tup_updated{datname=\"whisper\"}[5m]))",
           "legendFormat": "Updates/s"
@@ -1261,7 +1261,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(pg_stat_database_tup_fetched{datname=\"whisper\"}[5m]))",
           "legendFormat": "Fetched/s"
@@ -1273,7 +1273,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1349,7 +1349,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "pg_database_size_bytes{datname=\"whisper\"}",
           "legendFormat": "Database Size"
@@ -1374,7 +1374,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1420,7 +1420,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "redis_memory_used_bytes",
           "legendFormat": "Memory"
@@ -1432,7 +1432,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1478,7 +1478,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "redis_connected_clients",
           "legendFormat": "Clients"
@@ -1490,7 +1490,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1536,7 +1536,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total)",
           "legendFormat": "Hit Rate"
@@ -1548,7 +1548,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1594,7 +1594,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "redis_uptime_in_seconds",
           "legendFormat": "Uptime"
@@ -1606,7 +1606,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1683,7 +1683,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "redis_memory_used_bytes",
           "legendFormat": "Used"
@@ -1691,7 +1691,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "redis_memory_max_bytes",
           "legendFormat": "Max"
@@ -1703,7 +1703,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1779,7 +1779,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "rate(redis_commands_processed_total[5m])",
           "legendFormat": "Commands/s"
@@ -1804,7 +1804,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1858,7 +1858,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "100 - (avg(rate(windows_cpu_time_total{mode=\"idle\"}[1m])) * 100)",
           "legendFormat": "CPU"
@@ -1870,7 +1870,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1924,7 +1924,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "100 - ((windows_memory_available_bytes / windows_memory_physical_total_bytes) * 100)",
           "legendFormat": "Memory"
@@ -1936,7 +1936,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -1982,7 +1982,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "windows_memory_physical_total_bytes - windows_memory_available_bytes",
           "legendFormat": "Used RAM"
@@ -1994,7 +1994,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2040,7 +2040,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "time() - windows_system_boot_time_timestamp",
           "legendFormat": "Uptime"
@@ -2052,7 +2052,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2131,7 +2131,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "100 - (avg(rate(windows_cpu_time_total{mode=\"idle\"}[1m])) * 100)",
           "legendFormat": "CPU %"
@@ -2139,7 +2139,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "100 - ((windows_memory_available_bytes / windows_memory_physical_total_bytes) * 100)",
           "legendFormat": "Memory %"
@@ -2151,7 +2151,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2228,7 +2228,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(windows_net_bytes_received_total[5m]))",
           "legendFormat": "Received"
@@ -2236,7 +2236,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(windows_net_bytes_sent_total[5m]))",
           "legendFormat": "Sent"
@@ -2248,7 +2248,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2325,7 +2325,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(windows_logical_disk_read_bytes_total[5m])) by (volume)",
           "legendFormat": "Read {{volume}}"
@@ -2333,7 +2333,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(windows_logical_disk_write_bytes_total[5m])) by (volume)",
           "legendFormat": "Write {{volume}}"
@@ -2345,7 +2345,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2401,7 +2401,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "uid": "prometheus"
           },
           "expr": "100 - ((windows_logical_disk_free_bytes / windows_logical_disk_size_bytes) * 100)",
           "legendFormat": "{{volume}}"
@@ -2438,6 +2438,32 @@
         "query": "prometheus",
         "refresh": 1,
         "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "process_recording",
+          "value": "process_recording"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(flower_events_total, task)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "task",
+        "options": [],
+        "query": {
+          "query": "label_values(flower_events_total, task)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       }
     ]
   },

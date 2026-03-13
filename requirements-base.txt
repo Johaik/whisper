@@ -16,6 +16,7 @@ alembic>=1.13.0
 # Task Queue
 celery[redis]>=5.3.0
 redis>=5.0.0
+flower>=2.0.0
 
 # Google API Integration (optional - for caller name lookup)
 google-api-python-client>=2.0.0

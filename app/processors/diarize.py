@@ -84,7 +84,10 @@ def get_or_load_pipeline() -> Any:
             if settings.huggingface_token:
                 os.environ["HF_TOKEN"] = settings.huggingface_token
 
-            logger.info("Loading pyannote speaker diarization pipeline...")
+            logger.info(f"Loading pyannote speaker diarization pipeline... (torch_threads={settings.torch_threads})")
+            if settings.torch_threads > 0:
+                torch.set_num_threads(settings.torch_threads)
+            
             pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
             )

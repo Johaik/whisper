@@ -70,11 +70,12 @@ def get_or_load_model(
     cache_key = f"{model_name}:{device}:{compute_type}"
 
     if cache_key not in _model_cache:
-        logger.info(f"Loading Whisper model: {model_name} on {device} with {compute_type}")
+        logger.info(f"Loading Whisper model: {model_name} on {device} with {compute_type} (threads={settings.whisper_cpu_threads})")
         _model_cache[cache_key] = WhisperModel(
             model_name,
             device=device,
             compute_type=compute_type,
+            cpu_threads=settings.whisper_cpu_threads,
         )
         logger.info(f"Model loaded successfully: {model_name}")
 
