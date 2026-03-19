@@ -102,3 +102,12 @@ Thumbs.db
 GEMINI.md
 /monitoring/config.alloy
 poc_output/
+supabase/
+*.sql
+*.sql.gz
+*.sql.bz2
+dump_*.sql
+whisper_dump*
+fetch_dump.yaml
+.env.bak
+.env.tmp
