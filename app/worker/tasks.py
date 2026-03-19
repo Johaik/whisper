@@ -35,6 +35,7 @@ def trigger_advanced_analytics(recording_id: str | uuid.UUID, session: Session) 
     """Trigger advanced analytics: fingerprint, embeddings, and MV refresh."""
     try:
         logger.info(f"Triggering advanced analytics for: {recording_id}")
+        settings = get_settings()
         
         # 1. Fetch transcript segments
         from app.db.models import Transcript, Enrichment

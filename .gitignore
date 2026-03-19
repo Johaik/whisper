@@ -111,3 +111,4 @@ whisper_dump*
 fetch_dump.yaml
 .env.bak
 .env.tmppostgres-data/
+redis-data/
