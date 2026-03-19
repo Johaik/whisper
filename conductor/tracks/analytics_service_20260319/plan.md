@@ -35,13 +35,13 @@ Goal: Implement the "Metric Cache" and fingerprint generation logic.
 ## Phase 3: Analytics Queries & Business Intelligence
 Goal: Expose high-fidelity signals via read-optimized queries.
 
-- [ ] Task: Implement `GetCallerIntelligenceQuery`.
+- [x] Task: Implement `CallerIntelligenceQuery`. 0bead2b
     - [ ] Write TDD tests for person-based aggregations.
     - [ ] Implement logic in `analytics/app/queries/caller_intel.py`.
-- [ ] Task: Implement `GetSystemBottlenecksQuery`.
+- [x] Task: Implement `GetSystemBottlenecksQuery`. 12f1b4e
     - [ ] Write test for model performance and hardware cost analysis.
     - [ ] Implement logic in `analytics/app/queries/bottlenecks.py`.
-- [ ] Task: Implement Semantic Similarity Search.
+- [x] Task: Implement Semantic Similarity Search. 6f550d0
     - [ ] Write test for vector cosine similarity search.
     - [ ] Implement query in `analytics/app/queries/similarity.py`.
 - [ ] Task: Conductor - User Manual Verification 'Analytics Queries' (Protocol in workflow.md)
