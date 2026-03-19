@@ -206,6 +206,9 @@ class Enrichment(Base):
     # Full analytics as JSON
     analytics_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # Call Fingerprint (WPM, turn velocity, overlap, etc.)
+    fingerprint_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
