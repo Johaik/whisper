@@ -25,3 +25,4 @@ google-auth-oauthlib>=1.0.0
 
 # Monitoring
 prometheus-fastapi-instrumentator>=6.1.0
+pgvector>=0.2.5

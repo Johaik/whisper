@@ -34,6 +34,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application code
 COPY app/ ./app/
+COPY analytics/ ./analytics/
 
 # Create non-root user
 RUN useradd -m -u 1000 whisper && chown -R whisper:whisper /app

@@ -35,7 +35,9 @@ services:
 
   # FastAPI server
   api:
-    image: ghcr.io/johaik/whisper-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     container_name: whisper-api
     restart: unless-stopped
     ports:
@@ -70,7 +72,9 @@ services:
 
   # Celery worker
   worker:
-    image: ghcr.io/johaik/whisper-worker:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
     container_name: whisper-worker
     restart: unless-stopped
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-1}"]
@@ -115,7 +119,9 @@ services:
 
   # Celery Beat - schedules periodic tasks (e.g. cleanup stuck recordings every 15 min)
   beat:
-    image: ghcr.io/johaik/whisper-worker:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
     container_name: whisper-beat
     restart: unless-stopped
     command: [ "celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info" ]
@@ -133,7 +139,9 @@ services:
 
   # Folder watcher - auto-discovers new files
   watcher:
-    image: ghcr.io/johaik/whisper-watcher:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
     container_name: whisper-watcher
     restart: unless-stopped
     environment:
@@ -154,7 +162,9 @@ services:
 
   # Database migration runner (one-shot)
   migrate:
-    image: ghcr.io/johaik/whisper-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     container_name: whisper-migrate
     environment:
       - DATABASE_URL_SYNC=postgresql://whisper:whisper@postgres:5432/whisper
@@ -182,10 +192,12 @@ services:
   # ===========================================
 
   flower:
-    image: ghcr.io/johaik/whisper-worker:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
     container_name: whisper-flower
     restart: unless-stopped
-    command: [ "celery", "-A", "app.worker.celery_app", "flower", "--port=5555" ]
+    command: [ "python", "-m", "flower", "-A", "app.worker.celery_app", "--port=5555" ]
     ports:
       - "127.0.0.1:5555:5555"
     environment:
