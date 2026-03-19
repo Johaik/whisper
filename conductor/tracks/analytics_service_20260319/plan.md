@@ -5,14 +5,14 @@ This plan outlines the phased implementation of the Analytics microservice based
 ## Phase 1: Foundation & Data Models (Alembic)
 Goal: Update the PostgreSQL schema to support advanced analytics and vector embeddings.
 
-- [ ] Task: Initialize Alembic for the `analytics/` service.
+- [x] Task: Initialize Alembic for the `analytics/` service. 1472a18
     - [ ] Write configuration to `alembic.ini`.
     - [ ] Create base environment in `app/db/migrations/`.
-- [ ] Task: Create migration for `Enrichment.fingerprint_json`.
+- [x] Task: Create migration for `Enrichment.fingerprint_json`. 17c7ec8
     - [ ] Write test for schema migration.
     - [ ] Implement SQLAlchemy model update.
     - [ ] Run migration on Supabase.
-- [ ] Task: Enable PGVector and add `Transcript.embedding`.
+- [x] Task: Enable PGVector and add `Transcript.embedding`. 19d7b4d
     - [ ] Write test for vector operations.
     - [ ] Implement model update for `Transcript`.
     - [ ] Run migration on Supabase.
