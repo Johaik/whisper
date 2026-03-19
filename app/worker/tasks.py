@@ -23,8 +23,60 @@ from app.processors.transcribe import segments_to_json, transcribe_audio, Transc
 from app.services.google_contacts import lookup_caller_name
 from app.worker.celery_app import celery_app
 
+from analytics.app.commands.fingerprint import GenerateFingerprintCommand
+from analytics.app.commands.embedding import GenerateEmbeddingCommand
+from analytics.app.commands.refresh_mv import MaterializedViewRefreshCommand
+
 logger = logging.getLogger("app.worker.tasks")
 settings = get_settings()
+
+
+def trigger_advanced_analytics(recording_id: str | uuid.UUID, session: Session) -> None:
+    """Trigger advanced analytics: fingerprint, embeddings, and MV refresh."""
+    try:
+        logger.info(f"Triggering advanced analytics for: {recording_id}")
+        
+        # 1. Fetch transcript segments
+        from app.db.models import Transcript, Enrichment
+        transcript = session.query(Transcript).filter(Transcript.recording_id == recording_id).first()
+        enrichment = session.query(Enrichment).filter(Enrichment.recording_id == recording_id).first()
+        recording = session.query(Recording).filter(Recording.id == recording_id).first()
+
+        if not transcript or not enrichment or not recording:
+            logger.warning(f"Skipping advanced analytics: missing data for {recording_id}")
+            return
+
+        # 2. Calculate Fingerprint
+        if transcript.segments_json:
+            fingerprint = {
+                "wpm": GenerateFingerprintCommand.calculate_wpm(transcript.segments_json),
+                "turn_velocity": GenerateFingerprintCommand.calculate_turn_velocity(
+                    transcript.segments_json, 
+                    recording.duration_sec
+                ),
+                "overlap_ratio": GenerateFingerprintCommand.calculate_overlap_ratio(
+                    transcript.segments_json,
+                    recording.duration_sec
+                )
+            }
+            enrichment.fingerprint_json = fingerprint
+            logger.info(f"Generated fingerprint for {recording_id}: {fingerprint}")
+
+        # 3. Generate Embedding (Simple mock for now)
+        if transcript.text:
+            # In a real scenario, we'd call an actual model here
+            embedding = GenerateEmbeddingCommand.generate(transcript.text)
+            transcript.embedding = embedding
+            logger.info(f"Generated embedding for {recording_id}")
+
+        session.commit()
+
+        # 4. Refresh Materialized Views (Can be expensive, ideally every N minutes but here for demo)
+        MaterializedViewRefreshCommand.refresh_caller_intelligence(session)
+        MaterializedViewRefreshCommand.refresh_system_bottlenecks(session)
+        
+    except Exception as e:
+        logger.error(f"Advanced analytics failed for {recording_id}: {e}")
 
 
 def _error_message_with_step(session: Session, recording_id: str | uuid.UUID, base_message: str) -> str:
@@ -453,6 +505,9 @@ def process_recording(self: Task, recording_id: str) -> dict[str, Any]:
             speaker_count,
             diarization_info
         )
+
+        # Step 6: Advanced Analytics Trigger
+        trigger_advanced_analytics(rec_uuid, session)
 
         # Mark as done
         # Refresh to ensure latest state and attached
