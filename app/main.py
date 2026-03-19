@@ -8,6 +8,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app import __version__
 from app.api.routes import router
+from analytics.app.api.routes import router as analytics_router
 from app.config import get_settings
 
 # Configure logging
@@ -37,6 +38,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api/v1")
 
 # Prometheus metrics - exposes /metrics endpoint
 Instrumentator().instrument(app).expose(app)
