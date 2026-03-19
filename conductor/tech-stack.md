@@ -11,7 +11,8 @@
 - **Celery Beat:** Scheduler for periodic tasks (e.g., polling the database for queued items).
 
 ## 🗄️ Database & Storage
-- **PostgreSQL:** Reliable relational database for storing recordings, transcripts, and enrichment data.
+- **PostgreSQL + PGVector:** Relational database with vector similarity search capabilities for semantic intelligence.
+- **CQRS Architecture:** Separate microservice logic for analytics precalculations (Commands) and read-optimized views (Queries/Materialized Views).
 - **SQLAlchemy:** ORM (Object Relational Mapper) for database interactions.
 - **Alembic:** Database migration tool for versioning the PostgreSQL schema.
 

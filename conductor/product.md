@@ -17,7 +17,8 @@ A production-ready call recording transcription system that automatically proces
 - **Hebrew Transcription:** State-of-the-art Hebrew transcription with VAD filtering.
 - **Speaker Diarization:** Multi-speaker identification with overlap detection.
 - **Call Analytics:** Detailed metrics including talk time, silence ratio, and speaker turns.
-- **Sentiment Analysis & Insights:** (Future) Detecting tone, mood, and deeper insights from Hebrew conversations.
+- **Semantic Intelligence:** Semantic similarity search using vector embeddings (PGVector) to find relevant call segments across the database.
+- **CQRS Analytics:** High-performance behavioral analytics (WPM, turn velocity, overlap) driven by a Command-Query separation pattern for near-instant reporting.
 - **Auto-Discovery:** Independent watcher service for seamless file ingestion.
 
 ## 📈 Success Metrics
