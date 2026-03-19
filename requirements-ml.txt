@@ -18,3 +18,4 @@ faster-whisper>=1.0.0
 pyannote.audio>=3.1.0,<3.4.0
 huggingface_hub>=0.20.0,<0.25.0
 matplotlib  # Required by pyannote
+pgvector>=0.2.5

@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 
 class Base(DeclarativeBase):
@@ -154,6 +155,9 @@ class Transcript(Base):
 
     # Raw transcript output for debugging/reprocessing
     transcript_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    # Semantic embedding for similarity search (1536 is standard for OpenAI-style embeddings)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
