@@ -110,4 +110,4 @@ dump_*.sql
 whisper_dump*
 fetch_dump.yaml
 .env.bak
-.env.tmp
+.env.tmppostgres-data/
