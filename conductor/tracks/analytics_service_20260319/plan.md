@@ -18,7 +18,7 @@ Goal: Update the PostgreSQL schema to support advanced analytics and vector embe
     - [ ] Run migration on Supabase.
 - [ ] Task: Conductor - User Manual Verification 'Foundation & Data Models' (Protocol in workflow.md)
 
-## Phase 2: Core Analytics Commands (Precalculations)
+## Phase 2: Core Analytics Commands (Precalculations) [checkpoint: 3dc17d7]
 Goal: Implement the "Metric Cache" and fingerprint generation logic.
 
 - [x] Task: Implement `GenerateFingerprintCommand`. abbd5ef
