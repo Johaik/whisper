@@ -21,13 +21,13 @@ Goal: Update the PostgreSQL schema to support advanced analytics and vector embe
 ## Phase 2: Core Analytics Commands (Precalculations)
 Goal: Implement the "Metric Cache" and fingerprint generation logic.
 
-- [ ] Task: Implement `GenerateFingerprintCommand`.
+- [x] Task: Implement `GenerateFingerprintCommand`. abbd5ef
     - [ ] Write TDD tests for WPM, turn velocity, and overlap calculation.
     - [ ] Implement logic in `analytics/app/commands/fingerprint.py`.
-- [ ] Task: Implement Materialized View Refresh Command.
+- [x] Task: Implement Materialized View Refresh Command. 6731173
     - [ ] Write test for `caller_intelligence_mv` refresh.
     - [ ] Implement command in `analytics/app/commands/refresh_mv.py`.
-- [ ] Task: Implement `GenerateEmbeddingCommand`.
+- [x] Task: Implement `GenerateEmbeddingCommand`. 6b47570
     - [ ] Write test for embedding generation using a mock model.
     - [ ] Implement command in `analytics/app/commands/embedding.py`.
 - [ ] Task: Conductor - User Manual Verification 'Core Analytics Commands' (Protocol in workflow.md)
