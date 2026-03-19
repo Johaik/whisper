@@ -32,7 +32,7 @@ Goal: Implement the "Metric Cache" and fingerprint generation logic.
     - [ ] Implement command in `analytics/app/commands/embedding.py`.
 - [ ] Task: Conductor - User Manual Verification 'Core Analytics Commands' (Protocol in workflow.md)
 
-## Phase 3: Analytics Queries & Business Intelligence
+## Phase 3: Analytics Queries & Business Intelligence [checkpoint: bb202fe]
 Goal: Expose high-fidelity signals via read-optimized queries.
 
 - [x] Task: Implement `CallerIntelligenceQuery`. 0bead2b
