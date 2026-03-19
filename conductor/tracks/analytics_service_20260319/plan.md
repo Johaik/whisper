@@ -2,7 +2,7 @@
 
 This plan outlines the phased implementation of the Analytics microservice based on the `data_analytics_strategy.md`. All work follows the project's TDD-first workflow.
 
-## Phase 1: Foundation & Data Models (Alembic)
+## Phase 1: Foundation & Data Models (Alembic) [checkpoint: 551b60b]
 Goal: Update the PostgreSQL schema to support advanced analytics and vector embeddings.
 
 - [x] Task: Initialize Alembic for the `analytics/` service. 1472a18
